@@ -341,7 +341,7 @@ const CalculatorTab = ({ symbol }) => {
           </div>
           <div className="h-px bg-white/5" />
           <div className="glass-card px-4 py-3 flex items-center gap-3">
-            <div className={`w-4 h-4 rounded-full ${riskTier.dot} shadow-[0_0_10px_currentColor]`} />
+            <div className={`w-4 h-4 rounded-full ${riskTier.dotColor}`} />
             <span className="text-sm font-mono text-white/90" data-testid="risk-tier">{riskTier.label}</span>
           </div>
         </div>
