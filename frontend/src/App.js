@@ -204,30 +204,6 @@ const GlassCard = ({ children, className = "" }) => (
   <div className={`glass-card p-3 ${className}`}>{children}</div>
 );
 
-const SymbolSelector = ({ symbol, onSymbolChange }) => (
-  <div className="flex justify-end mb-4">
-    <Select value={symbol} onValueChange={onSymbolChange}>
-      <SelectTrigger 
-        className="h-10 w-auto px-5 glass-pill text-white/90 text-sm font-mono rounded-full border-0"
-        data-testid="symbol-selector"
-      >
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent className="bg-[#1a1a1a] border-white/10 text-white">
-        {Object.keys(SYMBOLS).map((sym) => (
-          <SelectItem 
-            key={sym} 
-            value={sym}
-            className="text-white/90 focus:bg-white/10 focus:text-white"
-          >
-            {sym} • ${SYMBOLS[sym].valuePerPoint}/{SYMBOLS[sym].unit === "points" ? "pt" : "1.0"}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  </div>
-);
-
 // Compact Session Card for 2x2 Grid
 const SessionGridCard = ({ session, now, isWeekendMode }) => {
   const countdown = getSessionCountdown(session, now);
