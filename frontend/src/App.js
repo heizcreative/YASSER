@@ -161,7 +161,7 @@ const SessionCard = ({ session, now, isWeekendMode }) => {
 
   return (
     <div 
-      className="flex items-center justify-between py-2.5 px-3 bg-black/20 border border-white/8 rounded-xl"
+      className="flex items-center justify-between py-2.5 px-3 bg-black/20 border border-white/[0.04] rounded-xl"
       data-testid={`session-${session.name.replace(/\s+/g, '-').toLowerCase()}`}
     >
       <div className="flex items-center gap-3">
@@ -179,8 +179,8 @@ const SessionCard = ({ session, now, isWeekendMode }) => {
       <div 
         className={`px-3 py-1 rounded-lg border text-xs font-medium ${
           displayOpen 
-            ? "bg-crtv-success/10 border-crtv-success/30 text-crtv-success" 
-            : "bg-crtv-loss/10 border-crtv-loss/30 text-crtv-loss"
+            ? "bg-crtv-success/10 border-crtv-success/20 text-crtv-success" 
+            : "bg-crtv-loss/10 border-crtv-loss/20 text-crtv-loss"
         }`}
       >
         {displayOpen ? "OPEN" : "CLOSED"}
