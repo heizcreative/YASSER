@@ -147,31 +147,43 @@ const Header = ({ symbol, onSymbolChange, currentTime, isWeekendMode }) => (
   </div>
 );
 
-const SessionRow = ({ session, now, isWeekendMode }) => {
-  const { isOpen, hours, minutes } = getCountdown(session, now);
+const formatTimeSimple = (hour) => {
+  const h = Math.floor(hour);
+  const m = Math.round((hour - h) * 60);
+  const ampm = h >= 12 && h < 24 ? " PM" : " AM";
+  const displayHour = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  return m > 0 ? `${displayHour}:${m.toString().padStart(2, "0")}${ampm}` : `${displayHour}${ampm}`;
+};
+
+const SessionCard = ({ session, now, isWeekendMode }) => {
+  const { isOpen } = getSessionStatus(session, now);
   const displayOpen = isWeekendMode ? false : isOpen;
 
   return (
-    <div className="flex items-center justify-between py-3 border-b border-white/5 last:border-0" data-testid={`session-${session.name.replace(/\s+/g, '-').toLowerCase()}`}>
-      <div className="flex items-center gap-3">
+    <div 
+      className="flex items-center justify-between p-4 bg-black/20 border border-white/8 rounded-2xl"
+      data-testid={`session-${session.name.replace(/\s+/g, '-').toLowerCase()}`}
+    >
+      <div className="flex items-center gap-4">
         <div 
-          className={`w-2 h-2 rounded-full ${displayOpen ? "bg-crtv-success" : "bg-white/30"}`}
+          className={`w-3 h-3 rounded-full ${displayOpen ? "bg-crtv-success shadow-[0_0_8px_rgba(40,230,165,0.5)]" : "bg-crtv-loss shadow-[0_0_8px_rgba(255,77,109,0.3)]"}`}
           data-testid={`session-dot-${session.name.replace(/\s+/g, '-').toLowerCase()}`}
         />
         <div>
-          <p className="text-sm font-medium text-white/90">{session.name}</p>
-          <p className="text-xs text-white/40 font-mono">
-            {isWeekendMode ? "CLOSED" : (displayOpen ? `Closes in ${hours}h ${minutes}m` : `Opens in ${hours}h ${minutes}m`)}
+          <p className="text-lg font-medium text-white/90">{session.name}</p>
+          <p className="text-sm text-white/50 font-mono">
+            {formatTimeSimple(session.start)}–{formatTimeSimple(session.end === 24 ? 0 : session.end)}
           </p>
         </div>
       </div>
-      <div className="text-right">
-        <p className={`text-xs font-medium ${displayOpen ? "text-crtv-success" : "text-white/40"}`}>
-          {displayOpen ? "Open" : "Closed"}
-        </p>
-        <p className="text-xs text-white/30 font-mono">
-          {formatTime12h(session.start)} – {formatTime12h(session.end === 24 ? 0 : session.end)}
-        </p>
+      <div 
+        className={`px-4 py-2 rounded-xl border text-sm font-medium ${
+          displayOpen 
+            ? "bg-crtv-success/10 border-crtv-success/30 text-crtv-success" 
+            : "bg-crtv-loss/10 border-crtv-loss/30 text-crtv-loss"
+        }`}
+      >
+        {displayOpen ? "OPEN" : "CLOSED"}
       </div>
     </div>
   );
@@ -182,14 +194,24 @@ const MarketSessions = ({ currentTime, isWeekendMode }) => {
 
   return (
     <GlassPanel className="mb-4" data-testid="market-sessions-card">
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-sm font-heading font-semibold text-white/70 uppercase tracking-wider">Market Sessions</h2>
-        <span className="text-xs font-mono text-white/50" data-testid="current-time">{currentTime} ET</span>
+      {/* Clock pill at top */}
+      <div className="flex justify-center mb-5">
+        <div className="px-6 py-2 bg-black/30 border border-white/10 rounded-full">
+          <span className="text-xl font-mono text-white/90" data-testid="current-time">ET {currentTime}</span>
+        </div>
       </div>
-      <div>
+      
+      {/* Session cards */}
+      <div className="space-y-3">
         {SESSIONS.map((session) => (
-          <SessionRow key={session.name} session={session} now={now} isWeekendMode={isWeekendMode} />
+          <SessionCard key={session.name} session={session} now={now} isWeekendMode={isWeekendMode} />
         ))}
+      </div>
+
+      {/* Footer */}
+      <div className="flex items-center justify-between mt-5 pt-4 border-t border-white/5">
+        <span className="text-xs text-white/40 font-mono">All times ET (America/Toronto)</span>
+        <span className="text-xs text-white/40 font-mono">OPEN / CLOSED only</span>
       </div>
     </GlassPanel>
   );
