@@ -334,7 +334,7 @@ const CalculatorTab = ({ symbol }) => {
             </span>
           </div>
           <div className="h-px bg-white/5" />
-          <div className="px-4 py-3 bg-black/20 border border-white/8 rounded-xl flex items-center gap-3">
+          <div className="px-4 py-3 bg-black/20 border border-white/[0.04] rounded-xl flex items-center gap-3">
             <div className={`w-4 h-4 rounded-full ${riskTier.dot}`} />
             <span className="text-sm font-mono text-white/90" data-testid="risk-tier">{riskTier.label}</span>
           </div>
@@ -345,7 +345,7 @@ const CalculatorTab = ({ symbol }) => {
       <div className="flex justify-end mt-3">
         <button
           onClick={handleReset}
-          className="px-5 py-3 bg-black/20 border border-white/8 rounded-xl text-sm font-mono text-white/70 hover:text-white hover:bg-white/5 transition-colors"
+          className="px-5 py-3 bg-black/20 border border-white/[0.04] rounded-xl text-sm font-mono text-white/70 hover:text-white hover:bg-white/5 transition-colors"
           data-testid="reset-button"
         >
           Reset Inputs
