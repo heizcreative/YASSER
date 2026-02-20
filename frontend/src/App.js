@@ -304,7 +304,7 @@ const MarketSessions = ({ currentTime, isWeekendMode }) => {
 };
 
 // Calculator Tab Component
-const CalculatorTab = ({ symbol }) => {
+const CalculatorTab = ({ symbol, onSymbolChange }) => {
   const [risk, setRisk] = useState(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.CALCULATOR);
     return saved ? JSON.parse(saved).risk || "" : "";
@@ -365,37 +365,63 @@ const CalculatorTab = ({ symbol }) => {
   };
 
   return (
-    <div className="space-y-4" data-testid="calculator-tab">
-      <GlassPanel>
-        <div className="space-y-4">
+    <div className="space-y-3" data-testid="calculator-tab">
+      <GlassPanel className="py-3">
+        <div className="space-y-3">
+          {/* Symbol Selector - Centered at top */}
+          <div className="flex justify-center mb-1">
+            <Select value={symbol} onValueChange={onSymbolChange}>
+              <SelectTrigger 
+                className="h-9 w-auto px-4 glass-card text-white/90 text-sm font-mono rounded-full border-0"
+                data-testid="symbol-selector"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="bg-[#1a1a1a] border-white/10 text-white">
+                {Object.keys(SYMBOLS).map((sym) => (
+                  <SelectItem 
+                    key={sym} 
+                    value={sym}
+                    className="text-white/90 focus:bg-white/10 focus:text-white"
+                  >
+                    {sym} • ${SYMBOLS[sym].valuePerPoint}/{SYMBOLS[sym].unit === "points" ? "pt" : "1.0"}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          
+          {/* Risk Input */}
           <div>
-            <label className="text-xs text-white/50 uppercase tracking-wider mb-2 block">Risk ($)</label>
+            <label className="text-xs text-white/50 uppercase tracking-wider mb-1.5 block">Risk ($)</label>
             <input
               type="number"
               value={risk}
               onChange={(e) => setRisk(e.target.value)}
-              className="w-full h-12 glass-input px-4 text-white font-mono text-lg focus:outline-none"
+              className="w-full h-11 glass-input px-4 text-white font-mono text-lg focus:outline-none"
               data-testid="risk-input"
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          
+          {/* Stop & Take Profit */}
+          <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="text-xs text-white/50 uppercase tracking-wider mb-2 block">Stop ({unitLabel})</label>
+              <label className="text-xs text-white/50 uppercase tracking-wider mb-1.5 block">Stop ({unitLabel})</label>
               <input
                 type="number"
                 value={stop}
                 onChange={(e) => setStop(e.target.value)}
-                className="w-full h-12 glass-input px-4 text-white font-mono text-lg focus:outline-none"
+                className="w-full h-11 glass-input px-4 text-white font-mono text-lg focus:outline-none"
                 data-testid="stop-input"
               />
             </div>
             <div>
-              <label className="text-xs text-white/50 uppercase tracking-wider mb-2 block">Take Profit ({unitLabel})</label>
+              <label className="text-xs text-white/50 uppercase tracking-wider mb-1.5 block">Take Profit ({unitLabel})</label>
               <input
                 type="number"
                 value={tp}
                 onChange={(e) => setTp(e.target.value)}
-                className="w-full h-12 glass-input px-4 text-white font-mono text-lg focus:outline-none"
+                className="w-full h-11 glass-input px-4 text-white font-mono text-lg focus:outline-none"
                 data-testid="tp-input"
               />
             </div>
