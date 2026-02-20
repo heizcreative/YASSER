@@ -816,10 +816,12 @@ function App() {
           currentTime={currentTime}
           isWeekendMode={isWeekendMode}
         />
-        <MarketSessions currentTime={currentTime} isWeekendMode={isWeekendMode} />
         
         {activeTab === "calculator" ? (
-          <CalculatorTab symbol={symbol} />
+          <>
+            <MarketSessions currentTime={currentTime} isWeekendMode={isWeekendMode} />
+            <CalculatorTab symbol={symbol} />
+          </>
         ) : (
           <CalendarTab
             journalEntries={journalEntries}
