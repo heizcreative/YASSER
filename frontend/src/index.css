@@ -66,7 +66,7 @@ h1, h2, h3, h4, h5, h6, .font-heading {
 
 @layer base {
     * {
-        @apply border-white/10;
+        @apply border-white/[0.04];
     }
 }
 
@@ -94,7 +94,7 @@ h1, h2, h3, h4, h5, h6, .font-heading {
     background: rgba(0, 0, 0, 0.18);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.04);
     border-radius: 16px;
 }
 
