@@ -116,7 +116,7 @@ const GlassPanel = ({ children, className = "" }) => (
 
 const Header = ({ symbol, onSymbolChange, currentTime, isWeekendMode }) => (
   <div className="flex items-center justify-between mb-4" data-testid="header">
-    <h1 className="text-2xl font-heading font-bold tracking-tight" data-testid="app-title">CRTV</h1>
+    <h1 className="text-3xl font-squids tracking-wider" data-testid="app-title">CRTV</h1>
     <div className="flex items-center gap-2">
       <Select value={symbol} onValueChange={onSymbolChange}>
         <SelectTrigger 
@@ -195,23 +195,17 @@ const MarketSessions = ({ currentTime, isWeekendMode }) => {
   return (
     <GlassPanel className="mb-4" data-testid="market-sessions-card">
       {/* Clock pill at top */}
-      <div className="flex justify-center mb-5">
+      <div className="flex justify-center mb-4">
         <div className="px-6 py-2 bg-black/30 border border-white/10 rounded-full">
           <span className="text-xl font-mono text-white/90" data-testid="current-time">ET {currentTime}</span>
         </div>
       </div>
       
-      {/* Session cards */}
-      <div className="space-y-3">
+      {/* Session cards - minimal gap */}
+      <div className="space-y-1">
         {SESSIONS.map((session) => (
           <SessionCard key={session.name} session={session} now={now} isWeekendMode={isWeekendMode} />
         ))}
-      </div>
-
-      {/* Footer */}
-      <div className="flex items-center justify-between mt-5 pt-4 border-t border-white/5">
-        <span className="text-xs text-white/40 font-mono">All times ET (America/Toronto)</span>
-        <span className="text-xs text-white/40 font-mono">OPEN / CLOSED only</span>
       </div>
     </GlassPanel>
   );
