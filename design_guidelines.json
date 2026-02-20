@@ -1,0 +1,113 @@
+{
+  "identity": "CRTV - The Institutional Glass Cockpit",
+  "design_philosophy": {
+    "core_concept": "Apple Glass x Institutional Trading. A cockpit for high-precision execution.",
+    "aesthetics": "Dark, Glassmorphic, Minimal, Data-First. No gradients, no noise, just pure signal.",
+    "rules": [
+      "NO WHITE BACKGROUNDS EVER. Body is fixed at #191919.",
+      "NO GRADIENTS. Flat colors or glass only.",
+      "Glass panels must use specific rgba(0,0,0,0.18) + blur(12px).",
+      "Mobile-first always. Desktop is just a centered mobile view (max 560px)."
+    ]
+  },
+  "typography": {
+    "font_family": {
+      "headings": "Manrope, sans-serif",
+      "body": "Inter, sans-serif",
+      "mono": "JetBrains Mono, monospace"
+    },
+    "imports": [
+      "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Manrope:wght@600;700;800&display=swap"
+    ]
+  },
+  "colors": {
+    "background": {
+      "app": "#191919",
+      "glass": "rgba(0, 0, 0, 0.18)"
+    },
+    "text": {
+      "primary": "#FFFFFF",
+      "secondary": "rgba(255, 255, 255, 0.6)",
+      "muted": "rgba(255, 255, 255, 0.4)"
+    },
+    "status": {
+      "success": "#28E6A5",
+      "loss": "#FF4D6D",
+      "warning": "#FFD34D",
+      "blue": "#4D9FFF"
+    },
+    "border": {
+      "subtle": "rgba(255, 255, 255, 0.08)",
+      "highlight": "rgba(255, 255, 255, 0.15)"
+    }
+  },
+  "tailwind_config_extension": {
+    "colors": {
+      "crtv": {
+        "bg": "#191919",
+        "glass": "rgba(0, 0, 0, 0.18)",
+        "success": "#28E6A5",
+        "loss": "#FF4D6D",
+        "warning": "#FFD34D",
+        "blue": "#4D9FFF"
+      }
+    },
+    "backdropBlur": {
+      "glass": "12px"
+    }
+  },
+  "components": {
+    "GlassPanel": {
+      "styles": "bg-crtv-glass backdrop-blur-glass border border-white/10 rounded-2xl shadow-lg",
+      "usage": "Use for ALL containers (Calculator, Calendar, Session Cards)."
+    },
+    "Input": {
+      "styles": "bg-black/20 border-white/5 text-white placeholder:text-white/20 focus:border-crtv-blue/50 focus:ring-0 rounded-xl h-12 px-4 font-mono",
+      "usage": "For calculator inputs."
+    },
+    "Button": {
+      "styles": "bg-crtv-blue text-white font-semibold rounded-xl hover:bg-crtv-blue/90 transition-colors h-12 active:scale-95 transition-transform",
+      "variants": {
+        "danger": "bg-crtv-loss/10 text-crtv-loss border border-crtv-loss/20 hover:bg-crtv-loss/20",
+        "ghost": "bg-transparent text-white/60 hover:text-white hover:bg-white/5"
+      }
+    },
+    "BottomNav": {
+      "styles": "fixed bottom-0 w-full max-w-[560px] bg-[#191919]/90 backdrop-blur-xl border-t border-white/5 flex justify-around py-4 z-50",
+      "item_active": "text-crtv-blue",
+      "item_inactive": "text-white/40 hover:text-white/60"
+    },
+    "Calendar": {
+      "grid": "grid grid-cols-7 gap-1",
+      "day_cell": "aspect-square flex flex-col items-center justify-center rounded-lg relative",
+      "dot": "w-1.5 h-1.5 rounded-full absolute bottom-2"
+    }
+  },
+  "layout_structure": {
+    "root": "min-h-screen bg-[#191919] text-white flex justify-center font-sans overflow-x-hidden",
+    "container": "w-full max-w-[560px] min-h-screen relative pb-32 px-5 pt-8 flex flex-col gap-6",
+    "z_index": {
+      "nav": 50,
+      "modal": 100,
+      "toast": 110
+    }
+  },
+  "functionality_rules": {
+    "timezone": "America/Toronto",
+    "persistence": "localStorage",
+    "refresh_rate": "30 seconds (for time/sessions)",
+    "inputs": "Risk (Currency), Stop (Pts/Ticks), TP (Pts/Ticks)",
+    "outputs": "Contracts (floored), Position Size, R:R"
+  },
+  "universal_guidelines": [
+    "Use 'lucide-react' for icons.",
+    "Ensure all interactive elements have 'data-testid'.",
+    "Use 'date-fns' and 'date-fns-tz' for timezone handling.",
+    "Persist all state (calculator inputs, journal entries) to localStorage.",
+    "NO gradients. NO white backgrounds.",
+    "Use standard HTML/Tailwind for layout. Use Shadcn logic but CUSTOM styles matching the 'GlassPanel' look.",
+    "Calculator logic: MNQ/MES use standard multipliers. BTCUSD uses 1.",
+    "Session logic: Weekend detection required."
+  ],
+  "image_urls": {}
+}
