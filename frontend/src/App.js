@@ -121,10 +121,70 @@ const getSessionStatus = (session, now) => {
   if (session.end > session.start) {
     isOpen = currentTime >= session.start && currentTime < session.end;
   } else {
+    // Session spans midnight (e.g., Asia Range 20:00 - 24:00)
     isOpen = currentTime >= session.start || currentTime < session.end;
   }
 
   return { isOpen, currentTime };
+};
+
+// Calculate countdown to open or close
+const getSessionCountdown = (session, now) => {
+  const hour = now.getHours();
+  const minute = now.getMinutes();
+  const currentTimeInMinutes = hour * 60 + minute;
+  
+  const startMinutes = Math.floor(session.start) * 60 + Math.round((session.start % 1) * 60);
+  const endMinutes = session.end === 24 ? 24 * 60 : Math.floor(session.end) * 60 + Math.round((session.end % 1) * 60);
+  
+  let isOpen = false;
+  let minutesRemaining = 0;
+  
+  if (session.end > session.start) {
+    // Normal session (doesn't span midnight)
+    isOpen = currentTimeInMinutes >= startMinutes && currentTimeInMinutes < endMinutes;
+    
+    if (isOpen) {
+      // Time until close
+      minutesRemaining = endMinutes - currentTimeInMinutes;
+    } else if (currentTimeInMinutes < startMinutes) {
+      // Time until open (same day)
+      minutesRemaining = startMinutes - currentTimeInMinutes;
+    } else {
+      // Time until open (next day)
+      minutesRemaining = (24 * 60 - currentTimeInMinutes) + startMinutes;
+    }
+  } else {
+    // Session spans midnight (Asia Range: 20:00 - 24:00/0:00)
+    isOpen = currentTimeInMinutes >= startMinutes || currentTimeInMinutes < endMinutes;
+    
+    if (isOpen) {
+      if (currentTimeInMinutes >= startMinutes) {
+        // Currently in evening portion (before midnight)
+        minutesRemaining = (24 * 60 - currentTimeInMinutes) + endMinutes;
+      } else {
+        // Currently in morning portion (after midnight, before end)
+        minutesRemaining = endMinutes - currentTimeInMinutes;
+      }
+    } else {
+      // Closed - time until open (session starts at startMinutes)
+      if (currentTimeInMinutes < startMinutes) {
+        minutesRemaining = startMinutes - currentTimeInMinutes;
+      } else {
+        minutesRemaining = (24 * 60 - currentTimeInMinutes) + startMinutes;
+      }
+    }
+  }
+  
+  const hours = Math.floor(minutesRemaining / 60);
+  const mins = minutesRemaining % 60;
+  
+  return {
+    isOpen,
+    hours,
+    mins,
+    label: isOpen ? `Closes in ${hours}h ${mins}m` : `Opens in ${hours}h ${mins}m`
+  };
 };
 
 const formatTimeSimple = (hour) => {
