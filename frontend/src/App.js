@@ -264,6 +264,12 @@ const CalculatorTab = ({ symbol }) => {
   const symbolData = SYMBOLS[symbol];
   const unitLabel = symbol === "BTCUSD" ? "USD" : symbolData.unit === "points" ? "pts" : "price";
 
+  const handleReset = () => {
+    setRisk("");
+    setStop("");
+    setTp("");
+  };
+
   return (
     <div className="space-y-4" data-testid="calculator-tab">
       <GlassPanel>
@@ -330,6 +336,13 @@ const CalculatorTab = ({ symbol }) => {
           <div className={`px-3 py-2 rounded-lg ${riskTier.bg} flex items-center justify-center`}>
             <span className={`text-xs font-medium ${riskTier.color}`} data-testid="risk-tier">{riskTier.label}</span>
           </div>
+          <button
+            onClick={handleReset}
+            className="w-full h-10 bg-black/20 border border-white/10 rounded-xl text-white/50 text-sm font-medium hover:bg-white/5 hover:text-white/70 transition-colors"
+            data-testid="reset-button"
+          >
+            Reset Inputs
+          </button>
         </div>
       </GlassPanel>
     </div>
