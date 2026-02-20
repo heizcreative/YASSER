@@ -513,6 +513,47 @@ const CalendarTab = ({ journalEntries, onAddEntry, onEditEntry, onDeleteEntry })
         </div>
       </GlassPanel>
 
+      {/* Stats Section */}
+      <GlassPanel className="mt-3 p-4">
+        <div className="space-y-3">
+          {/* Monthly Stats */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-white/40 font-mono uppercase">This Month</span>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-mono text-crtv-success/80">{monthlyStats.wins}</span>
+                <span className="text-xs text-white/30">wins</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-mono text-crtv-loss/80">{monthlyStats.losses}</span>
+                <span className="text-xs text-white/30">losses</span>
+              </div>
+            </div>
+          </div>
+          
+          <div className="h-px bg-white/5" />
+          
+          {/* All-Time Stats */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-white/40 font-mono uppercase">All Time</span>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-mono text-crtv-success/80">{allTimeStats.wins}</span>
+                <span className="text-xs text-white/30">wins</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-mono text-crtv-loss/80">{allTimeStats.losses}</span>
+                <span className="text-xs text-white/30">losses</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </GlassPanel>
+
       {/* Journal Entry Modal */}
       <JournalEntryModal
         isOpen={isModalOpen}
