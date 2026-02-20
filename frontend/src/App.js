@@ -197,16 +197,16 @@ const MarketSessions = ({ currentTime, isWeekendMode }) => {
   const now = getETTime();
 
   return (
-    <GlassPanel className="mb-3 py-3" data-testid="market-sessions-card">
+    <GlassPanel className="mb-4 py-4" data-testid="market-sessions-card">
       {/* Clock pill at top */}
-      <div className="flex justify-center mb-3">
-        <div className="px-5 py-1.5 bg-black/30 border border-white/[0.04] rounded-full">
+      <div className="flex justify-center mb-4">
+        <div className="px-6 py-2 glass-card rounded-full">
           <span className="text-lg font-mono text-white/90" data-testid="current-time">ET {currentTime}</span>
         </div>
       </div>
       
       {/* Session cards - minimal gap */}
-      <div className="space-y-1">
+      <div className="space-y-2">
         {SESSIONS.map((session) => (
           <SessionCard key={session.name} session={session} now={now} isWeekendMode={isWeekendMode} />
         ))}
