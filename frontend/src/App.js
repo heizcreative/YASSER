@@ -482,6 +482,14 @@ const CalendarTab = ({ journalEntries, onAddEntry, onEditEntry, onDeleteEntry })
           {days.map((day) => {
             const entry = getEntryForDate(day);
             const isToday = isSameDay(day, new Date());
+            // Determine color based on result type, not profit value
+            const profitColor = entry ? (entry.result === "win" ? "text-crtv-success" : entry.result === "loss" ? "text-crtv-loss" : "text-white/50") : "";
+            // Format profit - show absolute value with sign based on result
+            const displayProfit = entry && entry.profit !== 0 ? (
+              entry.result === "loss" 
+                ? `-$${Math.abs(entry.profit) >= 1000 ? (Math.abs(entry.profit) / 1000).toFixed(1) + 'k' : Math.abs(entry.profit)}`
+                : `+$${Math.abs(entry.profit) >= 1000 ? (Math.abs(entry.profit) / 1000).toFixed(1) + 'k' : Math.abs(entry.profit)}`
+            ) : null;
             return (
               <button
                 key={day.toISOString()}
@@ -494,11 +502,9 @@ const CalendarTab = ({ journalEntries, onAddEntry, onEditEntry, onDeleteEntry })
                 <span className={`text-sm ${isToday ? "text-white font-medium" : "text-white/70"}`}>
                   {format(day, "d")}
                 </span>
-                {entry && entry.profit !== 0 && (
-                  <span className={`text-[8px] font-mono font-medium leading-none mt-0.5 ${
-                    entry.result === "win" || entry.profit > 0 ? "text-crtv-success" : "text-crtv-loss"
-                  }`}>
-                    {formatProfit(entry.profit)}
+                {displayProfit && (
+                  <span className={`text-[8px] font-mono font-medium leading-none mt-0.5 ${profitColor}`}>
+                    {displayProfit}
                   </span>
                 )}
               </button>
