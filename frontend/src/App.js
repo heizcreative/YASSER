@@ -682,7 +682,7 @@ function App() {
 
   return (
     <div className="min-h-screen bg-[#191919] flex justify-center" data-testid="app-root">
-      <div className="w-full max-w-[560px] min-h-screen px-5 pt-8 pb-32">
+      <div className="w-full max-w-[560px] min-h-screen px-5 pt-8 pb-40">
         <Header
           symbol={symbol}
           onSymbolChange={setSymbol}
