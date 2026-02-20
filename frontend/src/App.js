@@ -114,6 +114,10 @@ const GlassPanel = ({ children, className = "" }) => (
   <div className={`glass-panel p-4 ${className}`}>{children}</div>
 );
 
+const GlassCard = ({ children, className = "" }) => (
+  <div className={`glass-card p-3 ${className}`}>{children}</div>
+);
+
 const Header = ({ symbol, onSymbolChange, currentTime, isWeekendMode }) => (
   <div className="flex items-center justify-between mb-4" data-testid="header">
     <h1 className="text-3xl font-squids tracking-wider" data-testid="app-title">CRTV</h1>
