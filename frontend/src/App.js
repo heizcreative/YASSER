@@ -436,8 +436,8 @@ const CalendarTab = ({ journalEntries, onAddEntry, onEditEntry, onDeleteEntry })
 
   return (
     <div data-testid="calendar-tab">
-      <GlassPanel>
-        <div className="flex items-center justify-between mb-4">
+      <GlassPanel className="p-5">
+        <div className="flex items-center justify-between mb-5">
           <button
             onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}
             className="p-2 hover:bg-white/5 rounded-lg transition-colors"
@@ -458,7 +458,7 @@ const CalendarTab = ({ journalEntries, onAddEntry, onEditEntry, onDeleteEntry })
         </div>
 
         {/* Day headers */}
-        <div className="grid grid-cols-7 gap-1 mb-2">
+        <div className="grid grid-cols-7 gap-1.5 mb-3">
           {["S", "M", "T", "W", "T", "F", "S"].map((day, i) => (
             <div key={i} className="text-center text-xs text-white/40 font-medium py-2">
               {day}
