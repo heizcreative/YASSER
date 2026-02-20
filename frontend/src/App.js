@@ -429,8 +429,8 @@ const CalculatorTab = ({ symbol, onSymbolChange }) => {
         </div>
       </GlassPanel>
 
-      <GlassPanel>
-        <div className="space-y-4">
+      <GlassPanel className="py-3">
+        <div className="space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-xs text-white/50 uppercase tracking-wider">
               {calculation.isBTC ? "BTC Size" : "Contracts"}
@@ -453,17 +453,17 @@ const CalculatorTab = ({ symbol, onSymbolChange }) => {
             </span>
           </div>
           <div className="h-px bg-white/5" />
-          <div className="glass-card px-4 py-3 flex items-center gap-3">
-            <div className={`w-4 h-4 rounded-full ${riskTier.dotColor}`} />
-            <span className="text-sm font-mono text-white/90" data-testid="risk-tier">{riskTier.label}</span>
+          <div className="glass-card px-3 py-2.5 flex items-center gap-3">
+            <div className={`w-3.5 h-3.5 rounded-full ${riskTier.dotColor}`} />
+            <span className="text-xs font-mono text-white/90" data-testid="risk-tier">{riskTier.label}</span>
           </div>
         </div>
       </GlassPanel>
 
-      <div className="flex justify-end mt-3">
+      <div className="flex justify-end mt-2">
         <button
           onClick={handleReset}
-          className="glass-button px-5 py-3 text-sm font-mono text-white/60 hover:text-white"
+          className="glass-button px-4 py-2 text-xs font-mono text-white/60 hover:text-white"
           data-testid="reset-button"
         >
           Reset Inputs
