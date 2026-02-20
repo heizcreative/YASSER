@@ -735,7 +735,7 @@ const JournalEntryModal = ({ isOpen, onClose, onSave, onDelete, entry, date }) =
 
 const BottomNav = ({ activeTab, onTabChange }) => (
   <div className="fixed bottom-0 left-0 right-0 flex justify-center z-[9999]" data-testid="bottom-nav">
-    <div className="w-full max-w-[560px] bg-[#191919]/95 backdrop-blur-xl border-t border-white/[0.04] flex justify-around py-3 px-6">
+    <div className="w-full max-w-[560px] bg-black/40 backdrop-blur-xl border-t border-white/[0.06] flex justify-around py-3 px-6">
       <button
         onClick={() => onTabChange("calculator")}
         className={`flex flex-col items-center gap-0.5 px-4 py-1.5 rounded-lg transition-colors ${
