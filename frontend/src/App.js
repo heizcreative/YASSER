@@ -161,23 +161,23 @@ const SessionCard = ({ session, now, isWeekendMode }) => {
 
   return (
     <div 
-      className="flex items-center justify-between p-4 bg-black/20 border border-white/8 rounded-2xl"
+      className="flex items-center justify-between py-2.5 px-3 bg-black/20 border border-white/8 rounded-xl"
       data-testid={`session-${session.name.replace(/\s+/g, '-').toLowerCase()}`}
     >
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3">
         <div 
-          className={`w-3 h-3 rounded-full ${displayOpen ? "bg-crtv-success shadow-[0_0_8px_rgba(40,230,165,0.5)]" : "bg-crtv-loss shadow-[0_0_8px_rgba(255,77,109,0.3)]"}`}
+          className={`w-2.5 h-2.5 rounded-full ${displayOpen ? "bg-crtv-success shadow-[0_0_6px_rgba(40,230,165,0.5)]" : "bg-crtv-loss shadow-[0_0_6px_rgba(255,77,109,0.3)]"}`}
           data-testid={`session-dot-${session.name.replace(/\s+/g, '-').toLowerCase()}`}
         />
         <div>
-          <p className="text-lg font-medium text-white/90">{session.name}</p>
-          <p className="text-sm text-white/50 font-mono">
+          <p className="text-sm font-medium text-white/90">{session.name}</p>
+          <p className="text-xs text-white/50 font-mono">
             {formatTimeSimple(session.start)}–{formatTimeSimple(session.end === 24 ? 0 : session.end)}
           </p>
         </div>
       </div>
       <div 
-        className={`px-4 py-2 rounded-xl border text-sm font-medium ${
+        className={`px-3 py-1 rounded-lg border text-xs font-medium ${
           displayOpen 
             ? "bg-crtv-success/10 border-crtv-success/30 text-crtv-success" 
             : "bg-crtv-loss/10 border-crtv-loss/30 text-crtv-loss"
@@ -193,11 +193,11 @@ const MarketSessions = ({ currentTime, isWeekendMode }) => {
   const now = getETTime();
 
   return (
-    <GlassPanel className="mb-4" data-testid="market-sessions-card">
+    <GlassPanel className="mb-3 py-3" data-testid="market-sessions-card">
       {/* Clock pill at top */}
-      <div className="flex justify-center mb-4">
-        <div className="px-6 py-2 bg-black/30 border border-white/10 rounded-full">
-          <span className="text-xl font-mono text-white/90" data-testid="current-time">ET {currentTime}</span>
+      <div className="flex justify-center mb-3">
+        <div className="px-5 py-1.5 bg-black/30 border border-white/10 rounded-full">
+          <span className="text-lg font-mono text-white/90" data-testid="current-time">ET {currentTime}</span>
         </div>
       </div>
       
@@ -393,8 +393,16 @@ const CalendarTab = ({ journalEntries, onAddEntry, onEditEntry, onDeleteEntry })
 
   const formatProfit = (profit) => {
     if (profit === 0 || profit === undefined) return "";
-    const sign = profit > 0 ? "+" : "";
-    return `${sign}$${Math.abs(profit).toFixed(0)}`;
+    const absProfit = Math.abs(profit);
+    const sign = profit > 0 ? "+" : "-";
+    
+    if (absProfit >= 1000000) {
+      return `${sign}$${(absProfit / 1000000).toFixed(1)}M`;
+    } else if (absProfit >= 1000) {
+      const k = absProfit / 1000;
+      return `${sign}$${k >= 10 ? Math.round(k) : k.toFixed(1)}k`;
+    }
+    return `${sign}$${absProfit.toFixed(0)}`;
   };
 
   const handleDayClick = (day) => {
