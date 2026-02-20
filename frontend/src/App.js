@@ -480,8 +480,13 @@ const CalendarTab = ({ journalEntries, onAddEntry, onEditEntry, onDeleteEntry })
                 <span className={`text-sm ${isToday ? "text-white font-medium" : "text-white/70"}`}>
                   {format(day, "d")}
                 </span>
+                {entry && entry.profit !== 0 && (
+                  <span className={`text-[9px] font-mono font-medium ${getProfitColor(entry)}`}>
+                    {formatProfit(entry.profit)}
+                  </span>
+                )}
                 {entry && (
-                  <div className={`w-1.5 h-1.5 rounded-full absolute bottom-1.5 ${getDotColor(entry.result)}`} />
+                  <div className={`w-1.5 h-1.5 rounded-full absolute bottom-1 ${getDotColor(entry.result)}`} />
                 )}
               </button>
             );
