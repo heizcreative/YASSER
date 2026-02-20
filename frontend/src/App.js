@@ -411,6 +411,24 @@ const CalendarTab = ({ journalEntries, onAddEntry, onEditEntry, onDeleteEntry })
     return `${sign}$${absProfit.toFixed(0)}`;
   };
 
+  // Calculate monthly stats
+  const monthlyStats = useMemo(() => {
+    const monthStr = format(currentMonth, "yyyy-MM");
+    const monthEntries = journalEntries.filter(e => e.date.startsWith(monthStr));
+    return {
+      wins: monthEntries.filter(e => e.result === "win" || (e.profit > 0 && e.result !== "loss")).length,
+      losses: monthEntries.filter(e => e.result === "loss" || (e.profit < 0 && e.result !== "win")).length
+    };
+  }, [journalEntries, currentMonth]);
+
+  // Calculate all-time stats
+  const allTimeStats = useMemo(() => {
+    return {
+      wins: journalEntries.filter(e => e.result === "win" || (e.profit > 0 && e.result !== "loss")).length,
+      losses: journalEntries.filter(e => e.result === "loss" || (e.profit < 0 && e.result !== "win")).length
+    };
+  }, [journalEntries]);
+
   const handleDayClick = (day) => {
     setSelectedDate(day);
     const entry = getEntryForDate(day);
