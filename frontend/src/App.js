@@ -196,7 +196,7 @@ const MarketSessions = ({ currentTime, isWeekendMode }) => {
     <GlassPanel className="mb-3 py-3" data-testid="market-sessions-card">
       {/* Clock pill at top */}
       <div className="flex justify-center mb-3">
-        <div className="px-5 py-1.5 bg-black/30 border border-white/10 rounded-full">
+        <div className="px-5 py-1.5 bg-black/30 border border-white/[0.04] rounded-full">
           <span className="text-lg font-mono text-white/90" data-testid="current-time">ET {currentTime}</span>
         </div>
       </div>
@@ -731,7 +731,7 @@ const JournalEntryModal = ({ isOpen, onClose, onSave, onDelete, entry, date }) =
 
 const BottomNav = ({ activeTab, onTabChange }) => (
   <div className="fixed bottom-0 left-0 right-0 flex justify-center z-[9999]" data-testid="bottom-nav">
-    <div className="w-full max-w-[560px] bg-[#191919]/95 backdrop-blur-xl border-t border-white/5 flex justify-around py-3 px-6">
+    <div className="w-full max-w-[560px] bg-[#191919]/95 backdrop-blur-xl border-t border-white/[0.04] flex justify-around py-3 px-6">
       <button
         onClick={() => onTabChange("calculator")}
         className={`flex flex-col items-center gap-0.5 px-4 py-1.5 rounded-lg transition-colors ${
