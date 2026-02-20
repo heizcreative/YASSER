@@ -169,6 +169,11 @@ h1, h2, h3, h4, h5, h6, .font-heading {
         0 2px 10px rgba(0, 0, 0, 0.2);
 }
 
+/* Session card open state - subtle green glow */
+.session-card-open {
+    border-color: rgba(40, 230, 165, 0.15);
+}
+
 /* Input styles */
 input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button {
