@@ -255,10 +255,10 @@ const CalculatorTab = ({ symbol }) => {
   }, [risk, stop, tp, symbol]);
 
   const getRiskTier = (totalRisk) => {
-    if (totalRisk < 50) return { color: "text-white/50", bg: "bg-white/5", label: "Very Low Risk" };
-    if (totalRisk <= 500) return { color: "text-crtv-success", bg: "bg-crtv-success/10", label: "Risk OK" };
-    if (totalRisk <= 1500) return { color: "text-crtv-warning", bg: "bg-crtv-warning/10", label: "High Risk" };
-    return { color: "text-crtv-loss", bg: "bg-crtv-loss/10", label: "Too Much Risk" };
+    if (totalRisk < 50) return { dot: "bg-white/50", label: "Very low risk (0-50)." };
+    if (totalRisk <= 500) return { dot: "bg-crtv-success", label: "Risk OK (50-500)." };
+    if (totalRisk <= 1500) return { dot: "bg-crtv-warning", label: "High risk (500-1500)." };
+    return { dot: "bg-crtv-loss", label: "Too much risk (1500+)." };
   };
 
   const riskTier = getRiskTier(calculation.totalRisk);
@@ -334,17 +334,18 @@ const CalculatorTab = ({ symbol }) => {
             </span>
           </div>
           <div className="h-px bg-white/5" />
-          <div className={`px-3 py-2 rounded-lg ${riskTier.bg} flex items-center justify-center`}>
-            <span className={`text-xs font-medium ${riskTier.color}`} data-testid="risk-tier">{riskTier.label}</span>
+          <div className="px-4 py-3 bg-black/20 border border-white/8 rounded-xl flex items-center gap-3">
+            <div className={`w-4 h-4 rounded-full ${riskTier.dot}`} />
+            <span className="text-sm font-mono text-white/90" data-testid="risk-tier">{riskTier.label}</span>
           </div>
         </div>
       </GlassPanel>
 
       {/* Reset button in its own box */}
-      <div className="flex justify-end">
+      <div className="flex justify-end mt-3">
         <button
           onClick={handleReset}
-          className="px-4 py-2 bg-black/20 border border-white/10 rounded-xl text-xs text-white/40 hover:text-white/60 hover:bg-white/5 transition-colors"
+          className="px-5 py-3 bg-black/20 border border-white/8 rounded-xl text-sm font-mono text-white/70 hover:text-white hover:bg-white/5 transition-colors"
           data-testid="reset-button"
         >
           Reset Inputs
