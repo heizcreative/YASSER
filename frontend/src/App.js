@@ -706,7 +706,7 @@ function App() {
     return saved ? JSON.parse(saved) : [];
   });
 
-  // Update time every 30 seconds
+  // Update time every second for real-time tracking
   useEffect(() => {
     const updateTime = () => {
       setCurrentTime(formatETTime(new Date()));
@@ -714,7 +714,7 @@ function App() {
     };
 
     updateTime();
-    const interval = setInterval(updateTime, 30000);
+    const interval = setInterval(updateTime, 1000);
     return () => clearInterval(interval);
   }, []);
 
