@@ -821,6 +821,7 @@ function App() {
           onSymbolChange={setSymbol}
           currentTime={currentTime}
           isWeekendMode={isWeekendMode}
+          showSymbolSelector={activeTab === "calculator"}
         />
         
         {activeTab === "calculator" ? (
