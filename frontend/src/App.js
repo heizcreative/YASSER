@@ -15,12 +15,14 @@ const SYMBOLS = {
   BTCUSD: { name: "BTCUSD", valuePerPoint: 1, unit: "usd" }
 };
 
-// Market sessions (all times in ET)
+// Market sessions (all times in ET) - arranged for 2x2 grid
+// Row 1: Asia Range, London Killzone
+// Row 2: NY Killzone, Post Trade
 const SESSIONS = [
-  { name: "Asia Range", start: 20, end: 24 },
-  { name: "London Killzone", start: 2, end: 5 },
-  { name: "NY Killzone", start: 9.5, end: 11 },
-  { name: "Post Trade", start: 11, end: 20 }
+  { name: "Asia Range", start: 20, end: 24, timeLabel: "8 PM–12 AM" },
+  { name: "London Killzone", start: 2, end: 5, timeLabel: "2 AM–5 AM" },
+  { name: "NY Killzone", start: 9.5, end: 11, timeLabel: "9:30 AM–11 AM" },
+  { name: "Post Trade", start: 11, end: 20, timeLabel: "11 AM–8 PM" }
 ];
 
 // Checklist sessions with colors
