@@ -118,36 +118,38 @@ const GlassCard = ({ children, className = "" }) => (
   <div className={`glass-card p-3 ${className}`}>{children}</div>
 );
 
-const Header = ({ symbol, onSymbolChange, currentTime, isWeekendMode }) => (
+const Header = ({ symbol, onSymbolChange, currentTime, isWeekendMode, showSymbolSelector = true }) => (
   <div className="flex items-center justify-between mb-4" data-testid="header">
     <h1 className="text-3xl font-squids tracking-wider" data-testid="app-title">CRTV</h1>
-    <div className="flex items-center gap-2">
-      <Select value={symbol} onValueChange={onSymbolChange}>
-        <SelectTrigger 
-          className="h-8 w-auto px-3 bg-black/20 border-white/10 text-white/90 text-xs font-mono rounded-full"
-          data-testid="symbol-selector"
-        >
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent className="bg-[#1a1a1a] border-white/10 text-white">
-          {Object.keys(SYMBOLS).map((sym) => (
-            <SelectItem 
-              key={sym} 
-              value={sym}
-              className="text-white/90 focus:bg-white/10 focus:text-white"
-              data-testid={`symbol-option-${sym}`}
-            >
-              {sym} • ${SYMBOLS[sym].valuePerPoint}/{SYMBOLS[sym].unit === "points" ? "pt" : "1.0"}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      {isWeekendMode && (
-        <span className="px-2 py-1 bg-crtv-warning/20 text-crtv-warning text-xs font-mono rounded-full" data-testid="weekend-badge">
-          Weekend
-        </span>
-      )}
-    </div>
+    {showSymbolSelector && (
+      <div className="flex items-center gap-2">
+        <Select value={symbol} onValueChange={onSymbolChange}>
+          <SelectTrigger 
+            className="h-8 w-auto px-3 glass-card text-white/90 text-xs font-mono rounded-full border-0"
+            data-testid="symbol-selector"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="bg-[#1a1a1a] border-white/10 text-white">
+            {Object.keys(SYMBOLS).map((sym) => (
+              <SelectItem 
+                key={sym} 
+                value={sym}
+                className="text-white/90 focus:bg-white/10 focus:text-white"
+                data-testid={`symbol-option-${sym}`}
+              >
+                {sym} • ${SYMBOLS[sym].valuePerPoint}/{SYMBOLS[sym].unit === "points" ? "pt" : "1.0"}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {isWeekendMode && (
+          <span className="px-2 py-1 bg-crtv-warning/20 text-crtv-warning text-xs font-mono rounded-full" data-testid="weekend-badge">
+            Weekend
+          </span>
+        )}
+      </div>
+    )}
   </div>
 );
 
