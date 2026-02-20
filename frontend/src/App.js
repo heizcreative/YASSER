@@ -142,30 +142,27 @@ const GlassCard = ({ children, className = "" }) => (
   <div className={`glass-card p-3 ${className}`}>{children}</div>
 );
 
-const Header = ({ symbol, onSymbolChange, showSymbolSelector = true }) => (
-  <div className="flex items-center justify-between mb-4" data-testid="header">
-    <h1 className="text-3xl font-squids tracking-wider" data-testid="app-title">CRTV</h1>
-    {showSymbolSelector && (
-      <Select value={symbol} onValueChange={onSymbolChange}>
-        <SelectTrigger 
-          className="h-8 w-auto px-3 glass-card text-white/90 text-xs font-mono rounded-full border-0"
-          data-testid="symbol-selector"
-        >
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent className="bg-[#1a1a1a] border-white/10 text-white">
-          {Object.keys(SYMBOLS).map((sym) => (
-            <SelectItem 
-              key={sym} 
-              value={sym}
-              className="text-white/90 focus:bg-white/10 focus:text-white"
-            >
-              {sym} • ${SYMBOLS[sym].valuePerPoint}/{SYMBOLS[sym].unit === "points" ? "pt" : "1.0"}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    )}
+const SymbolSelector = ({ symbol, onSymbolChange }) => (
+  <div className="flex justify-end mb-4">
+    <Select value={symbol} onValueChange={onSymbolChange}>
+      <SelectTrigger 
+        className="h-10 w-auto px-5 glass-pill text-white/90 text-sm font-mono rounded-full border-0"
+        data-testid="symbol-selector"
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent className="bg-[#1a1a1a] border-white/10 text-white">
+        {Object.keys(SYMBOLS).map((sym) => (
+          <SelectItem 
+            key={sym} 
+            value={sym}
+            className="text-white/90 focus:bg-white/10 focus:text-white"
+          >
+            {sym} • ${SYMBOLS[sym].valuePerPoint}/{SYMBOLS[sym].unit === "points" ? "pt" : "1.0"}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   </div>
 );
 
@@ -361,7 +358,7 @@ const CalculatorTab = ({ symbol }) => {
 const ChecklistItem = ({ item, checked, onToggle, sessionColor }) => {
   return (
     <div 
-      className={`flex items-center justify-between py-3 px-4 glass-card cursor-pointer transition-all duration-200 ${checked ? 'opacity-70' : ''}`}
+      className={`flex items-center justify-between py-4 px-4 glass-card cursor-pointer transition-all duration-200 ${checked ? 'opacity-70' : ''}`}
       onClick={onToggle}
       data-testid={`checklist-item-${item.id}`}
     >
@@ -559,7 +556,7 @@ const ChecklistTab = ({ currentTime, isWeekendMode }) => {
             </p>
           )}
         </div>
-        <div className="space-y-2">
+        <div className="space-y-3">
           {CHECKLIST_ITEMS[activeSession].items.map((item) => (
             <ChecklistItem
               key={item.id}
@@ -578,7 +575,7 @@ const ChecklistTab = ({ currentTime, isWeekendMode }) => {
 // Bottom Navigation
 const BottomNav = ({ activeTab, onTabChange }) => (
   <div className="fixed bottom-0 left-0 right-0 flex justify-center z-[9999]" data-testid="bottom-nav">
-    <div className="w-full max-w-[560px] bg-black/40 backdrop-blur-xl border-t border-white/[0.06] flex justify-around py-3 px-6">
+    <div className="w-full max-w-[560px] bg-[#0f0f0f] border-t border-white/[0.06] flex justify-around py-3 px-6">
       <button
         onClick={() => onTabChange("calculator")}
         className={`flex flex-col items-center gap-0.5 px-4 py-1.5 rounded-lg transition-colors ${
@@ -633,24 +630,18 @@ function App() {
 
   return (
     <div className="min-h-screen bg-[#0f0f0f] flex justify-center" data-testid="app-root">
-      <div className="w-full max-w-[560px] min-h-screen px-5 pt-8 pb-40">
-        <Header
-          symbol={symbol}
-          onSymbolChange={setSymbol}
-          showSymbolSelector={activeTab === "calculator"}
-        />
-        
+      <div className="w-full max-w-[560px] min-h-screen px-5 pt-6 pb-24">
         {activeTab === "calculator" ? (
           <>
+            <SymbolSelector symbol={symbol} onSymbolChange={setSymbol} />
             <MarketSessions currentTime={currentTime} isWeekendMode={isWeekendMode} />
             <CalculatorTab symbol={symbol} />
           </>
         ) : (
           <ChecklistTab currentTime={currentTime} isWeekendMode={isWeekendMode} />
         )}
-        
-        <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
       </div>
+      <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
     </div>
   );
 }
