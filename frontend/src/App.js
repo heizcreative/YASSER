@@ -165,26 +165,26 @@ const SessionCard = ({ session, now, isWeekendMode }) => {
 
   return (
     <div 
-      className="flex items-center justify-between py-2.5 px-3 bg-black/20 border border-white/[0.04] rounded-xl"
+      className="flex items-center justify-between py-3 px-4 glass-card"
       data-testid={`session-${session.name.replace(/\s+/g, '-').toLowerCase()}`}
     >
       <div className="flex items-center gap-3">
         <div 
-          className={`w-2.5 h-2.5 rounded-full ${displayOpen ? "bg-crtv-success shadow-[0_0_6px_rgba(40,230,165,0.5)]" : "bg-crtv-loss shadow-[0_0_6px_rgba(255,77,109,0.3)]"}`}
+          className={`w-2.5 h-2.5 rounded-full ${displayOpen ? "bg-crtv-success shadow-[0_0_10px_rgba(40,230,165,0.6)]" : "bg-crtv-loss shadow-[0_0_10px_rgba(255,77,109,0.4)]"}`}
           data-testid={`session-dot-${session.name.replace(/\s+/g, '-').toLowerCase()}`}
         />
         <div>
           <p className="text-sm font-medium text-white/90">{session.name}</p>
-          <p className="text-xs text-white/50 font-mono">
+          <p className="text-xs text-white/40 font-mono">
             {formatTimeSimple(session.start)}–{formatTimeSimple(session.end === 24 ? 0 : session.end)}
           </p>
         </div>
       </div>
       <div 
-        className={`px-3 py-1 rounded-lg border text-xs font-medium ${
+        className={`px-3 py-1.5 rounded-full text-xs font-semibold ${
           displayOpen 
-            ? "bg-crtv-success/10 border-crtv-success/20 text-crtv-success" 
-            : "bg-crtv-loss/10 border-crtv-loss/20 text-crtv-loss"
+            ? "bg-crtv-success/15 text-crtv-success shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]" 
+            : "bg-crtv-loss/15 text-crtv-loss shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
         }`}
       >
         {displayOpen ? "OPEN" : "CLOSED"}
