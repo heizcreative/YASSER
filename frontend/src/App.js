@@ -382,6 +382,21 @@ const CalendarTab = ({ journalEntries, onAddEntry, onEditEntry, onDeleteEntry })
     }
   };
 
+  const getProfitColor = (entry) => {
+    if (!entry) return "";
+    if (entry.result === "win" || entry.profit > 0) return "text-crtv-success";
+    if (entry.result === "loss" || entry.profit < 0) return "text-crtv-loss";
+    if (entry.result === "be") return "text-crtv-blue";
+    if (entry.result === "missed") return "text-crtv-warning";
+    return "text-white/50";
+  };
+
+  const formatProfit = (profit) => {
+    if (profit === 0 || profit === undefined) return "";
+    const sign = profit > 0 ? "+" : "";
+    return `${sign}$${Math.abs(profit).toFixed(0)}`;
+  };
+
   const handleDayClick = (day) => {
     setSelectedDate(day);
     const entry = getEntryForDate(day);
