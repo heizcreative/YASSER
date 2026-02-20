@@ -1,0 +1,54 @@
+{
+  "summary": "Completed frontend testing of CRTV trading app. Calculator functionality working perfectly with correct MNQ calculations and BTCUSD decimal display. Critical overlay issue found blocking calendar navigation.",
+  
+  "backend_issues": {},
+  
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "BottomNavigation",
+        "issue": "Emergent badge overlay blocks calendar tab navigation - users cannot switch to calendar",
+        "selector": "#emergent-badge",
+        "fix_priority": "CRITICAL",
+        "details": "Fixed positioned badge with z-index 9999 intercepts pointer events, preventing calendar tab clicks"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Tab switching",
+        "issue": "Calendar tab inaccessible due to overlay blocking navigation",
+        "affected_selectors": ["[data-testid='nav-calendar-btn']"]
+      }
+    ],
+    "design_issues": []
+  },
+  
+  "passed_tests": [
+    "Header shows CRTV title correctly",
+    "Symbol selector dropdown works and switches between MNQ, MES, MGC1!, BTCUSD",
+    "Symbol formats display correctly (MNQ • $2/pt format)",
+    "Market Sessions card shows current ET time", 
+    "Sessions show open/closed status with countdowns",
+    "Calculator tab loads and is visible by default",
+    "Risk input accepts values and works",
+    "Stop input accepts values and works", 
+    "TP input accepts values and works",
+    "Calculator calculates MNQ contracts correctly (25 contracts for 500/(10*2))",
+    "Calculator shows Total Risk and TP Profit correctly",
+    "Calculator shows Risk Tier (Low/Medium/High)",
+    "BTCUSD calculator shows BTC Size with 1 decimal (2.0)",
+    "Dark theme implemented - no white backgrounds anywhere",
+    "Glass panel styling working correctly"
+  ],
+  
+  "test_report_links": [],
+  
+  "action_item_for_main_agent": "Fix critical overlay issue: Remove or adjust z-index of #emergent-badge element blocking bottom navigation. This prevents users from accessing the calendar tab completely.",
+  
+  "updated_files": [],
+  
+  "success_percentage": "frontend: 85% - Most functionality working except critical navigation blocking issue",
+  
+  "should_call_test_agent_after_fix": "true",
+  "should_main_agent_test_itself": "false"
+}
