@@ -426,7 +426,7 @@ const WeekendReview = () => (
 
 // Checklist Tab Component
 const ChecklistTab = ({ currentTime, isWeekendMode }) => {
-  const [activeSession, setActiveSession] = useState(getCurrentChecklistSession);
+  const [activeSession, setActiveSession] = useState(() => getCurrentChecklistSession());
   const [checkedItems, setCheckedItems] = useState(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.CHECKLIST);
     if (saved) {
@@ -440,13 +440,12 @@ const ChecklistTab = ({ currentTime, isWeekendMode }) => {
   });
   const lastResetRef = useRef(null);
 
-  // Auto session switching and reset logic
+  // Reset logic at 8PM - but don't auto-switch tabs
   useEffect(() => {
-    const checkSession = () => {
+    const checkReset = () => {
       const now = getETTime();
       const hour = now.getHours();
       const minute = now.getMinutes();
-      const currentTime = hour + minute / 60;
       
       // Check for reset at 8PM (20:00)
       if (hour === 20 && minute === 0) {
@@ -460,14 +459,10 @@ const ChecklistTab = ({ currentTime, isWeekendMode }) => {
           }));
         }
       }
-
-      // Auto switch session
-      const newSession = getCurrentChecklistSession();
-      setActiveSession(newSession);
     };
 
-    checkSession();
-    const interval = setInterval(checkSession, 1000);
+    checkReset();
+    const interval = setInterval(checkReset, 1000);
     return () => clearInterval(interval);
   }, []);
 
@@ -492,12 +487,16 @@ const ChecklistTab = ({ currentTime, isWeekendMode }) => {
     return { checked, total: items.length };
   };
 
-  const now = getETTime();
-
   if (isWeekendMode) {
     return (
       <div data-testid="checklist-tab">
-        <MarketSessions currentTime={currentTime} isWeekendMode={isWeekendMode} />
+        {/* Clock pill only */}
+        <div className="flex justify-center mb-6">
+          <div className="px-6 py-2 glass-card rounded-full flex items-center gap-2">
+            <span className="text-lg font-mono text-white/90" data-testid="current-time">ET {currentTime}</span>
+            <span className="px-2 py-0.5 bg-crtv-warning/20 text-crtv-warning text-xs font-mono rounded-full">Weekend</span>
+          </div>
+        </div>
         <WeekendReview />
       </div>
     );
@@ -505,7 +504,12 @@ const ChecklistTab = ({ currentTime, isWeekendMode }) => {
 
   return (
     <div data-testid="checklist-tab">
-      <MarketSessions currentTime={currentTime} isWeekendMode={isWeekendMode} />
+      {/* Clock pill only */}
+      <div className="flex justify-center mb-6">
+        <div className="px-6 py-2 glass-card rounded-full">
+          <span className="text-lg font-mono text-white/90" data-testid="current-time">ET {currentTime}</span>
+        </div>
+      </div>
 
       {/* Session Tabs */}
       <div className="grid grid-cols-4 gap-2 mb-4">
