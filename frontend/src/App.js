@@ -228,44 +228,75 @@ const SymbolSelector = ({ symbol, onSymbolChange }) => (
   </div>
 );
 
-const SessionCard = ({ session, now, isWeekendMode }) => {
-  const { isOpen } = getSessionStatus(session, now);
-  const displayOpen = isWeekendMode ? false : isOpen;
-
+// Compact Session Card for 2x2 Grid
+const SessionGridCard = ({ session, now, isWeekendMode }) => {
+  const countdown = getSessionCountdown(session, now);
+  const isOpen = isWeekendMode ? false : countdown.isOpen;
+  
   return (
-    <div className="flex items-center justify-between py-3 px-4 glass-card">
-      <div className="flex items-center gap-3">
-        <div className={`w-2.5 h-2.5 rounded-full ${displayOpen ? "bg-crtv-success shadow-[0_0_10px_rgba(40,230,165,0.6)]" : "bg-crtv-loss shadow-[0_0_10px_rgba(255,77,109,0.4)]"}`} />
-        <div>
-          <p className="text-sm font-medium text-white/90">{session.name}</p>
-          <p className="text-xs text-white/40 font-mono">
-            {formatTimeSimple(session.start)}–{formatTimeSimple(session.end === 24 ? 0 : session.end)}
-          </p>
+    <div 
+      className={`glass-card p-3 flex flex-col gap-1.5 transition-all duration-300 ${
+        isOpen ? 'session-card-open' : ''
+      }`}
+      style={{
+        boxShadow: isOpen ? '0 0 20px rgba(40, 230, 165, 0.12), inset 0 1px 0 rgba(255,255,255,0.03)' : undefined
+      }}
+    >
+      {/* Top row: Name + Status */}
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium text-white/90 truncate">{session.name}</span>
+        <div className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+          isOpen 
+            ? "bg-crtv-success/15 text-crtv-success" 
+            : "bg-crtv-loss/15 text-crtv-loss"
+        }`}>
+          {isOpen ? "OPEN" : "CLOSED"}
         </div>
       </div>
-      <div className={`w-20 py-1.5 rounded-full text-xs font-semibold text-center ${displayOpen ? "bg-crtv-success/15 text-crtv-success" : "bg-crtv-loss/15 text-crtv-loss"}`}>
-        {displayOpen ? "OPEN" : "CLOSED"}
-      </div>
+      
+      {/* Time range */}
+      <span className="text-[10px] text-white/40 font-mono">{session.timeLabel}</span>
+      
+      {/* Countdown */}
+      <span className={`text-[10px] font-mono ${isOpen ? 'text-crtv-success/80' : 'text-white/50'}`}>
+        {isWeekendMode ? 'Weekend' : countdown.label}
+      </span>
     </div>
   );
 };
 
 const MarketSessions = ({ currentTime, isWeekendMode }) => {
-  const now = getETTime();
+  const [now, setNow] = useState(getETTime());
+  
+  // Update every minute for countdown accuracy
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setNow(getETTime());
+    }, 60000); // Update every minute
+    return () => clearInterval(interval);
+  }, []);
 
   return (
-    <GlassPanel className="mb-4 py-4" data-testid="market-sessions-card">
-      <div className="flex justify-center mb-4">
-        <div className="px-6 py-2 glass-card rounded-full flex items-center gap-2">
-          <span className="text-lg font-mono text-white/90" data-testid="current-time">ET {currentTime}</span>
+    <GlassPanel className="mb-4 py-3 px-3" data-testid="market-sessions-card">
+      {/* Clock pill */}
+      <div className="flex justify-center mb-3">
+        <div className="px-5 py-1.5 glass-card rounded-full flex items-center gap-2">
+          <span className="text-sm font-mono text-white/90" data-testid="current-time">ET {currentTime}</span>
           {isWeekendMode && (
-            <span className="px-2 py-0.5 bg-crtv-warning/20 text-crtv-warning text-xs font-mono rounded-full">Weekend</span>
+            <span className="px-2 py-0.5 bg-crtv-warning/20 text-crtv-warning text-[10px] font-mono rounded-full">Weekend</span>
           )}
         </div>
       </div>
-      <div className="space-y-2">
+      
+      {/* 2x2 Grid */}
+      <div className="grid grid-cols-2 gap-2">
         {SESSIONS.map((session) => (
-          <SessionCard key={session.name} session={session} now={now} isWeekendMode={isWeekendMode} />
+          <SessionGridCard 
+            key={session.name} 
+            session={session} 
+            now={now} 
+            isWeekendMode={isWeekendMode} 
+          />
         ))}
       </div>
     </GlassPanel>
