@@ -289,28 +289,27 @@ const GlassCard = ({ children, className = "" }) => (
 );
 
 // Compact Session Card for 2x2 Grid
-const SessionGridCard = ({ session, now, isWeekendMode }) => {
-  const countdown = getSessionCountdown(session, now);
-  const isOpen = isWeekendMode ? false : countdown.isOpen;
+const SessionGridCard = ({ session, now }) => {
+  const status = getLiveSessionStatus(session, now);
   
   return (
     <div 
       className={`glass-card p-3 flex flex-col gap-1.5 transition-all duration-300 ${
-        isOpen ? 'session-card-open' : ''
+        status.isOpen ? 'session-card-open' : ''
       }`}
       style={{
-        boxShadow: isOpen ? '0 0 20px rgba(40, 230, 165, 0.12), inset 0 1px 0 rgba(255,255,255,0.03)' : undefined
+        boxShadow: status.isOpen ? '0 0 20px rgba(40, 230, 165, 0.12), inset 0 1px 0 rgba(255,255,255,0.03)' : undefined
       }}
     >
       {/* Top row: Name + Status */}
       <div className="flex items-center justify-between">
         <span className="text-xs font-medium text-white/90 truncate">{session.name}</span>
         <div className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-          isOpen 
+          status.isOpen 
             ? "bg-crtv-success/15 text-crtv-success" 
             : "bg-crtv-loss/15 text-crtv-loss"
         }`}>
-          {isOpen ? "OPEN" : "CLOSED"}
+          {status.isOpen ? "OPEN" : "CLOSED"}
         </div>
       </div>
       
@@ -318,8 +317,8 @@ const SessionGridCard = ({ session, now, isWeekendMode }) => {
       <span className="text-[10px] text-white/40 font-mono">{session.timeLabel}</span>
       
       {/* Countdown */}
-      <span className={`text-[10px] font-mono ${isOpen ? 'text-crtv-success/80' : 'text-white/50'}`}>
-        {isWeekendMode ? 'Weekend' : countdown.label}
+      <span className={`text-[10px] font-mono ${status.isOpen ? 'text-crtv-success/80' : 'text-white/50'}`}>
+        {status.label}
       </span>
     </div>
   );
@@ -328,11 +327,11 @@ const SessionGridCard = ({ session, now, isWeekendMode }) => {
 const MarketSessions = ({ currentTime, isWeekendMode }) => {
   const [now, setNow] = useState(getETTime());
   
-  // Update every minute for countdown accuracy
+  // Update every second for live countdown
   useEffect(() => {
     const interval = setInterval(() => {
       setNow(getETTime());
-    }, 60000); // Update every minute
+    }, 1000); // Update every second
     return () => clearInterval(interval);
   }, []);
 
@@ -354,8 +353,7 @@ const MarketSessions = ({ currentTime, isWeekendMode }) => {
           <SessionGridCard 
             key={session.name} 
             session={session} 
-            now={now} 
-            isWeekendMode={isWeekendMode} 
+            now={now}
           />
         ))}
       </div>
