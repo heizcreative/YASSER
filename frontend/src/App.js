@@ -749,12 +749,11 @@ function App() {
 
   return (
     <div className="min-h-screen bg-[#0f0f0f] flex justify-center" data-testid="app-root">
-      <div className="w-full max-w-[560px] min-h-screen px-5 pt-6 pb-24">
+      <div className="w-full max-w-[560px] min-h-screen px-5 pt-4 pb-24">
         {activeTab === "calculator" ? (
           <>
-            <SymbolSelector symbol={symbol} onSymbolChange={setSymbol} />
             <MarketSessions currentTime={currentTime} isWeekendMode={isWeekendMode} />
-            <CalculatorTab symbol={symbol} />
+            <CalculatorTab symbol={symbol} onSymbolChange={setSymbol} />
           </>
         ) : (
           <ChecklistTab currentTime={currentTime} isWeekendMode={isWeekendMode} />
