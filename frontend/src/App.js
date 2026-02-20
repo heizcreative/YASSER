@@ -281,7 +281,7 @@ const CalculatorTab = ({ symbol }) => {
               type="number"
               value={risk}
               onChange={(e) => setRisk(e.target.value)}
-              className="w-full h-12 bg-black/20 border border-white/10 rounded-xl px-4 text-white font-mono text-lg focus:border-crtv-blue/50 focus:outline-none transition-colors"
+              className="w-full h-12 bg-black/20 border border-white/[0.04] rounded-xl px-4 text-white font-mono text-lg focus:border-crtv-blue/30 focus:outline-none transition-colors"
               data-testid="risk-input"
             />
           </div>
@@ -292,7 +292,7 @@ const CalculatorTab = ({ symbol }) => {
                 type="number"
                 value={stop}
                 onChange={(e) => setStop(e.target.value)}
-                className="w-full h-12 bg-black/20 border border-white/10 rounded-xl px-4 text-white font-mono text-lg focus:border-crtv-blue/50 focus:outline-none transition-colors"
+                className="w-full h-12 bg-black/20 border border-white/[0.04] rounded-xl px-4 text-white font-mono text-lg focus:border-crtv-blue/30 focus:outline-none transition-colors"
                 data-testid="stop-input"
               />
             </div>
@@ -302,7 +302,7 @@ const CalculatorTab = ({ symbol }) => {
                 type="number"
                 value={tp}
                 onChange={(e) => setTp(e.target.value)}
-                className="w-full h-12 bg-black/20 border border-white/10 rounded-xl px-4 text-white font-mono text-lg focus:border-crtv-blue/50 focus:outline-none transition-colors"
+                className="w-full h-12 bg-black/20 border border-white/[0.04] rounded-xl px-4 text-white font-mono text-lg focus:border-crtv-blue/30 focus:outline-none transition-colors"
                 data-testid="tp-input"
               />
             </div>
