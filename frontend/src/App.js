@@ -603,7 +603,7 @@ const JournalEntryModal = ({ isOpen, onClose, onSave, onDelete, entry, date }) =
 };
 
 const BottomNav = ({ activeTab, onTabChange }) => (
-  <div className="fixed bottom-0 left-0 right-0 flex justify-center" data-testid="bottom-nav">
+  <div className="fixed bottom-0 left-0 right-0 flex justify-center z-[9999]" data-testid="bottom-nav">
     <div className="w-full max-w-[560px] bg-[#191919]/95 backdrop-blur-xl border-t border-white/5 flex justify-around py-4 px-8">
       <button
         onClick={() => onTabChange("calculator")}
