@@ -333,16 +333,16 @@ const CalculatorTab = ({ symbol }) => {
             </span>
           </div>
           <div className="h-px bg-white/5" />
-          <div className={`px-3 py-2 rounded-lg ${riskTier.bg} flex items-center justify-center`}>
+          <div className={`px-3 py-2 rounded-lg ${riskTier.bg} flex items-center justify-between`}>
             <span className={`text-xs font-medium ${riskTier.color}`} data-testid="risk-tier">{riskTier.label}</span>
+            <button
+              onClick={handleReset}
+              className="text-xs text-white/40 hover:text-white/60 transition-colors"
+              data-testid="reset-button"
+            >
+              Reset
+            </button>
           </div>
-          <button
-            onClick={handleReset}
-            className="w-full h-10 bg-black/20 border border-white/10 rounded-xl text-white/50 text-sm font-medium hover:bg-white/5 hover:text-white/70 transition-colors"
-            data-testid="reset-button"
-          >
-            Reset Inputs
-          </button>
         </div>
       </GlassPanel>
     </div>
@@ -661,30 +661,30 @@ const JournalEntryModal = ({ isOpen, onClose, onSave, onDelete, entry, date }) =
 
 const BottomNav = ({ activeTab, onTabChange }) => (
   <div className="fixed bottom-0 left-0 right-0 flex justify-center z-[9999]" data-testid="bottom-nav">
-    <div className="w-full max-w-[560px] bg-[#191919]/95 backdrop-blur-xl border-t border-white/5 flex justify-around py-4 px-8">
+    <div className="w-full max-w-[560px] bg-[#191919]/95 backdrop-blur-xl border-t border-white/5 flex justify-around py-3 px-6">
       <button
         onClick={() => onTabChange("calculator")}
-        className={`flex flex-col items-center gap-1 px-6 py-2 rounded-xl transition-colors ${
+        className={`flex flex-col items-center gap-0.5 px-4 py-1.5 rounded-lg transition-colors ${
           activeTab === "calculator" 
             ? "bg-white/5 text-crtv-blue" 
             : "text-white/40 hover:text-white/60"
         }`}
         data-testid="nav-calculator-btn"
       >
-        <Calculator className="w-5 h-5" />
-        <span className="text-xs font-medium">Calculator</span>
+        <Calculator className="w-4 h-4" />
+        <span className="text-[10px] font-medium">Calculator</span>
       </button>
       <button
         onClick={() => onTabChange("calendar")}
-        className={`flex flex-col items-center gap-1 px-6 py-2 rounded-xl transition-colors ${
+        className={`flex flex-col items-center gap-0.5 px-4 py-1.5 rounded-lg transition-colors ${
           activeTab === "calendar" 
             ? "bg-white/5 text-crtv-blue" 
             : "text-white/40 hover:text-white/60"
         }`}
         data-testid="nav-calendar-btn"
       >
-        <CalendarIcon className="w-5 h-5" />
-        <span className="text-xs font-medium">Calendar</span>
+        <CalendarIcon className="w-4 h-4" />
+        <span className="text-[10px] font-medium">Calendar</span>
       </button>
     </div>
   </div>
