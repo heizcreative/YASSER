@@ -255,9 +255,10 @@ const CalculatorTab = ({ symbol }) => {
   }, [risk, stop, tp, symbol]);
 
   const getRiskTier = (totalRisk) => {
-    if (totalRisk <= 500) return { color: "text-crtv-success", bg: "bg-crtv-success/10", label: "Low Risk" };
-    if (totalRisk <= 1500) return { color: "text-crtv-warning", bg: "bg-crtv-warning/10", label: "Medium Risk" };
-    return { color: "text-crtv-loss", bg: "bg-crtv-loss/10", label: "High Risk" };
+    if (totalRisk < 50) return { color: "text-white/50", bg: "bg-white/5", label: "Very Low Risk" };
+    if (totalRisk <= 500) return { color: "text-crtv-success", bg: "bg-crtv-success/10", label: "Risk OK" };
+    if (totalRisk <= 1500) return { color: "text-crtv-warning", bg: "bg-crtv-warning/10", label: "High Risk" };
+    return { color: "text-crtv-loss", bg: "bg-crtv-loss/10", label: "Too Much Risk" };
   };
 
   const riskTier = getRiskTier(calculation.totalRisk);
@@ -333,18 +334,22 @@ const CalculatorTab = ({ symbol }) => {
             </span>
           </div>
           <div className="h-px bg-white/5" />
-          <div className={`px-3 py-2 rounded-lg ${riskTier.bg} flex items-center justify-between`}>
+          <div className={`px-3 py-2 rounded-lg ${riskTier.bg} flex items-center justify-center`}>
             <span className={`text-xs font-medium ${riskTier.color}`} data-testid="risk-tier">{riskTier.label}</span>
-            <button
-              onClick={handleReset}
-              className="text-xs text-white/40 hover:text-white/60 transition-colors"
-              data-testid="reset-button"
-            >
-              Reset
-            </button>
           </div>
         </div>
       </GlassPanel>
+
+      {/* Reset button in its own box */}
+      <div className="flex justify-end">
+        <button
+          onClick={handleReset}
+          className="px-4 py-2 bg-black/20 border border-white/10 rounded-xl text-xs text-white/40 hover:text-white/60 hover:bg-white/5 transition-colors"
+          data-testid="reset-button"
+        >
+          Reset Inputs
+        </button>
+      </div>
     </div>
   );
 };
@@ -480,7 +485,7 @@ const CalendarTab = ({ journalEntries, onAddEntry, onEditEntry, onDeleteEntry })
               <button
                 key={day.toISOString()}
                 onClick={() => handleDayClick(day)}
-                className={`aspect-square flex flex-col items-center justify-start pt-1.5 rounded-lg relative transition-colors hover:bg-white/5 ${
+                className={`aspect-square flex flex-col items-center justify-center rounded-lg transition-colors hover:bg-white/5 ${
                   isToday ? "bg-white/10 border border-white/20" : ""
                 }`}
                 data-testid={`calendar-day-${format(day, "yyyy-MM-dd")}`}
@@ -489,12 +494,11 @@ const CalendarTab = ({ journalEntries, onAddEntry, onEditEntry, onDeleteEntry })
                   {format(day, "d")}
                 </span>
                 {entry && entry.profit !== 0 && (
-                  <span className={`text-[8px] font-mono font-medium leading-none mt-0.5 ${getProfitColor(entry)}`}>
+                  <span className={`text-[8px] font-mono font-medium leading-none mt-0.5 ${
+                    entry.result === "win" || entry.profit > 0 ? "text-crtv-success" : "text-crtv-loss"
+                  }`}>
                     {formatProfit(entry.profit)}
                   </span>
-                )}
-                {entry && (
-                  <div className={`w-1 h-1 rounded-full absolute bottom-1 ${getDotColor(entry.result)}`} />
                 )}
               </button>
             );
