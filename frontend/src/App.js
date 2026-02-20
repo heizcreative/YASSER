@@ -261,10 +261,10 @@ const CalculatorTab = ({ symbol }) => {
   }, [risk, stop, tp, symbol]);
 
   const getRiskTier = (totalRisk) => {
-    if (totalRisk < 50) return { dot: "bg-white/50", label: "Very low risk (0-50)." };
-    if (totalRisk <= 500) return { dot: "bg-crtv-success", label: "Risk OK (50-500)." };
-    if (totalRisk <= 1500) return { dot: "bg-crtv-warning", label: "High risk (500-1500)." };
-    return { dot: "bg-crtv-loss", label: "Too much risk (1500+)." };
+    if (totalRisk < 50) return { dotColor: "bg-white/40", label: "Very low risk (0-50)." };
+    if (totalRisk <= 500) return { dotColor: "bg-crtv-success", label: "Risk OK (50-500)." };
+    if (totalRisk <= 1500) return { dotColor: "bg-crtv-warning", label: "High risk (500-1500)." };
+    return { dotColor: "bg-crtv-loss", label: "Too much risk (1500+)." };
   };
 
   const riskTier = getRiskTier(calculation.totalRisk);
