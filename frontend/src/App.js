@@ -467,7 +467,7 @@ const CalendarTab = ({ journalEntries, onAddEntry, onEditEntry, onDeleteEntry })
         </div>
 
         {/* Calendar grid */}
-        <div className="grid grid-cols-7 gap-1">
+        <div className="grid grid-cols-7 gap-1.5">
           {/* Empty cells for days before month start */}
           {Array.from({ length: startDayOfWeek }).map((_, i) => (
             <div key={`empty-${i}`} className="aspect-square" />
@@ -480,7 +480,7 @@ const CalendarTab = ({ journalEntries, onAddEntry, onEditEntry, onDeleteEntry })
               <button
                 key={day.toISOString()}
                 onClick={() => handleDayClick(day)}
-                className={`aspect-square flex flex-col items-center justify-center rounded-lg relative transition-colors hover:bg-white/5 ${
+                className={`aspect-square flex flex-col items-center justify-start pt-1.5 rounded-lg relative transition-colors hover:bg-white/5 ${
                   isToday ? "bg-white/10 border border-white/20" : ""
                 }`}
                 data-testid={`calendar-day-${format(day, "yyyy-MM-dd")}`}
@@ -489,12 +489,12 @@ const CalendarTab = ({ journalEntries, onAddEntry, onEditEntry, onDeleteEntry })
                   {format(day, "d")}
                 </span>
                 {entry && entry.profit !== 0 && (
-                  <span className={`text-[9px] font-mono font-medium ${getProfitColor(entry)}`}>
+                  <span className={`text-[8px] font-mono font-medium leading-none mt-0.5 ${getProfitColor(entry)}`}>
                     {formatProfit(entry.profit)}
                   </span>
                 )}
                 {entry && (
-                  <div className={`w-1.5 h-1.5 rounded-full absolute bottom-1 ${getDotColor(entry.result)}`} />
+                  <div className={`w-1 h-1 rounded-full absolute bottom-1 ${getDotColor(entry.result)}`} />
                 )}
               </button>
             );
