@@ -183,10 +183,10 @@ const SessionCard = ({ session, now, isWeekendMode }) => {
         </div>
       </div>
       <div 
-        className={`px-3 py-1.5 rounded-full text-xs font-semibold ${
+        className={`w-20 py-1.5 rounded-full text-xs font-semibold text-center ${
           displayOpen 
-            ? "bg-crtv-success/15 text-crtv-success shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]" 
-            : "bg-crtv-loss/15 text-crtv-loss shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
+            ? "bg-crtv-success/15 text-crtv-success" 
+            : "bg-crtv-loss/15 text-crtv-loss"
         }`}
       >
         {displayOpen ? "OPEN" : "CLOSED"}
