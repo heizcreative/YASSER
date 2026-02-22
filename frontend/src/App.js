@@ -81,6 +81,257 @@ const getETTime = () => toZonedTime(new Date(), TIMEZONE);
 const formatETTime = () => formatInTimeZone(new Date(), TIMEZONE, "HH:mm");
 const getETDateKey = () => formatInTimeZone(new Date(), TIMEZONE, "yyyy-MM-dd");
 
+// Weekend market closure: Friday 5PM ET → Sunday 6PM ET
+const isMarketClosed = (etDate) => {
+  const day = etDate.getDay();
+  const hour = etDate.getHours();
+  const minute = etDate.getMinutes();
+  const timeDecimal = hour + minute / 60;
+
+  // Friday 5PM onwards
+  if (day === 5 && timeDecimal >= 17) return true;
+  // All day Saturday
+  if (day === 6) return true;
+  // Sunday before 6PM
+  if (day === 0 && timeDecimal < 18) return true;
+  
+  return false;
+};
+
+// Check if a day is valid for a session
+// Asia Range: Sun-Thu evenings (8PM-12AM) - NOT Friday night
+// London/NY/Post: Mon-Fri only
+const isValidSessionDay = (sessionName, dayOfWeek) => {
+  if (sessionName === "Asia Range") {
+    // Asia runs Sun, Mon, Tue, Wed, Thu evenings (0, 1, 2, 3, 4)
+    // NOT Friday (5) or Saturday (6)
+    return dayOfWeek >= 0 && dayOfWeek <= 4;
+  } else {
+    // London, NY, Post Trade: Monday (1) through Friday (5)
+    return dayOfWeek >= 1 && dayOfWeek <= 5;
+  }
+};
+
+// Create an ET date for a specific day offset and time
+const createETDate = (baseDate, dayOffset, hour, minute = 0) => {
+  const result = new Date(baseDate);
+  result.setDate(result.getDate() + dayOffset);
+  result.setHours(hour, minute, 0, 0);
+  return result;
+};
+
+// Get the next market open time (Sunday 6PM ET)
+const getNextMarketOpen = (now) => {
+  const day = now.getDay();
+  const hour = now.getHours();
+  const minute = now.getMinutes();
+  const timeDecimal = hour + minute / 60;
+  
+  let daysToAdd = 0;
+  
+  if (day === 5 && timeDecimal >= 17) {
+    // Friday after 5PM -> Sunday
+    daysToAdd = 2;
+  } else if (day === 6) {
+    // Saturday -> Sunday
+    daysToAdd = 1;
+  } else if (day === 0 && timeDecimal < 18) {
+    // Sunday before 6PM -> same day at 6PM
+    daysToAdd = 0;
+  }
+  
+  return createETDate(now, daysToAdd, 18, 0);
+};
+
+// Get session times in hours
+const getSessionTimes = (session) => {
+  const startHour = Math.floor(session.start);
+  const startMin = Math.round((session.start % 1) * 60);
+  const endHour = session.end === 24 ? 0 : Math.floor(session.end);
+  const endMin = session.end === 24 ? 0 : Math.round((session.end % 1) * 60);
+  return { startHour, startMin, endHour, endMin };
+};
+
+// Main function: Get live session status with proper calendar logic
+const getLiveSessionStatus = (session, now) => {
+  const day = now.getDay();
+  const hour = now.getHours();
+  const minute = now.getMinutes();
+  const timeDecimal = hour + minute / 60;
+  
+  const { startHour, startMin, endHour, endMin } = getSessionTimes(session);
+  const startDecimal = startHour + startMin / 60;
+  const endDecimal = session.end === 24 ? 24 : endHour + endMin / 60;
+  
+  const marketClosed = isMarketClosed(now);
+  const validDay = isValidSessionDay(session.name, day);
+  
+  // Determine if session is currently OPEN
+  let isOpen = false;
+  
+  if (!marketClosed && validDay) {
+    if (session.name === "Asia Range") {
+      // Asia: 8PM-12AM (20:00-24:00)
+      isOpen = timeDecimal >= startDecimal && timeDecimal < 24;
+    } else if (session.end > session.start) {
+      // Normal session within same day
+      isOpen = timeDecimal >= startDecimal && timeDecimal < endDecimal;
+    }
+  }
+  
+  // Special case: Friday Post Trade closes at 5PM, not 8PM
+  if (session.name === "Post Trade" && day === 5 && timeDecimal >= 17) {
+    isOpen = false;
+  }
+  
+  // Calculate next open or close time
+  let targetTime;
+  let secondsRemaining;
+  
+  if (isOpen) {
+    // Calculate time until close
+    if (session.name === "Post Trade" && day === 5) {
+      // Friday: Post Trade closes at 5PM
+      targetTime = createETDate(now, 0, 17, 0);
+    } else if (session.name === "Asia Range") {
+      // Asia closes at midnight (next day 0:00)
+      targetTime = createETDate(now, 1, 0, 0);
+    } else {
+      // Normal close time
+      targetTime = createETDate(now, 0, endHour, endMin);
+    }
+    secondsRemaining = Math.max(0, Math.floor((targetTime - now) / 1000));
+  } else {
+    // Calculate time until next open
+    targetTime = getNextSessionOpen(session, now);
+    secondsRemaining = Math.max(0, Math.floor((targetTime - now) / 1000));
+  }
+  
+  // Format countdown (days+hours OR hours+minutes)
+  const label = formatCountdown(secondsRemaining, isOpen);
+  
+  return {
+    isOpen,
+    secondsRemaining,
+    label
+  };
+};
+
+// Find the next valid open time for a session
+const getNextSessionOpen = (session, now) => {
+  const day = now.getDay();
+  const hour = now.getHours();
+  const minute = now.getMinutes();
+  const timeDecimal = hour + minute / 60;
+  
+  const { startHour, startMin } = getSessionTimes(session);
+  const startDecimal = startHour + startMin / 60;
+  
+  // Check if market is in weekend closure (Fri 5PM - Sun 6PM)
+  const marketClosed = isMarketClosed(now);
+  
+  if (session.name === "Asia Range") {
+    // Asia Range: Opens Sun-Thu at 8PM
+    // Valid days: 0 (Sun), 1 (Mon), 2 (Tue), 3 (Wed), 4 (Thu)
+    
+    if (marketClosed) {
+      // During weekend, next open is Sunday 8PM (but only if after market reopens at 6PM)
+      const marketOpen = getNextMarketOpen(now);
+      const sundayAsiaOpen = createETDate(now, 0, 20, 0);
+      
+      // If it's Sunday
+      if (day === 0) {
+        if (timeDecimal < 18) {
+          // Before market opens - Asia opens at 8PM same day
+          return createETDate(now, 0, 20, 0);
+        } else if (timeDecimal < 20) {
+          // Market open but before Asia - opens at 8PM
+          return createETDate(now, 0, 20, 0);
+        }
+      }
+      
+      // Friday or Saturday - next is Sunday 8PM
+      let daysToSunday = (7 - day) % 7;
+      if (daysToSunday === 0 && timeDecimal >= 20) daysToSunday = 7;
+      return createETDate(now, daysToSunday, 20, 0);
+    }
+    
+    // Not weekend - find next valid evening
+    if (timeDecimal < startDecimal && isValidSessionDay(session.name, day)) {
+      // Today before 8PM and valid day
+      return createETDate(now, 0, startHour, startMin);
+    }
+    
+    // Find next valid day
+    for (let i = 1; i <= 7; i++) {
+      const nextDay = (day + i) % 7;
+      if (isValidSessionDay(session.name, nextDay)) {
+        const candidate = createETDate(now, i, startHour, startMin);
+        if (!isMarketClosed(candidate)) {
+          return candidate;
+        }
+      }
+    }
+  } else {
+    // London, NY, Post Trade: Opens Mon-Fri
+    
+    if (marketClosed) {
+      // During weekend, find next Monday
+      let daysToMonday;
+      if (day === 5) {
+        daysToMonday = 3; // Fri -> Mon
+      } else if (day === 6) {
+        daysToMonday = 2; // Sat -> Mon
+      } else if (day === 0) {
+        daysToMonday = 1; // Sun -> Mon
+      } else {
+        daysToMonday = (8 - day) % 7;
+      }
+      return createETDate(now, daysToMonday, startHour, startMin);
+    }
+    
+    // Check if can open today
+    if (timeDecimal < startDecimal && isValidSessionDay(session.name, day)) {
+      // Today before session start
+      return createETDate(now, 0, startHour, startMin);
+    }
+    
+    // Find next valid day
+    for (let i = 1; i <= 7; i++) {
+      const nextDay = (day + i) % 7;
+      if (isValidSessionDay(session.name, nextDay)) {
+        const candidate = createETDate(now, i, startHour, startMin);
+        if (!isMarketClosed(candidate)) {
+          return candidate;
+        }
+      }
+    }
+  }
+  
+  // Fallback (shouldn't reach here)
+  return createETDate(now, 1, startHour, startMin);
+};
+
+// Format countdown: Xd Yh (if ≥24h) or Xh Ym (if <24h)
+const formatCountdown = (totalSeconds, isClosing) => {
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  const totalHours = Math.floor(totalMinutes / 60);
+  const days = Math.floor(totalHours / 24);
+  const hours = totalHours % 24;
+  const minutes = totalMinutes % 60;
+  
+  const prefix = isClosing ? "Closes in" : "Opens in";
+  
+  if (days > 0) {
+    // Show days + hours only
+    return `${prefix} ${days}d ${hours}h`;
+  } else {
+    // Show hours + minutes only
+    return `${prefix} ${hours}h ${minutes}m`;
+  }
+};
+
+// Legacy weekend check for checklist (uses different timing)
 const isWeekend = () => {
   const now = getETTime();
   const day = now.getDay();
@@ -92,165 +343,9 @@ const isWeekend = () => {
   if (day === 5 && currentTime >= 17) return true;
   // All day Saturday
   if (day === 6) return true;
-  // Sunday until 8PM (20:00)
-  if (day === 0 && currentTime < 20) return true;
+  // Sunday until 6PM (market reopen)
+  if (day === 0 && currentTime < 18) return true;
   return false;
-};
-
-// Check if we're in Friday special mode (5PM-8PM Friday where Post Trade is still open)
-const isFridayPostTradeWindow = () => {
-  const now = getETTime();
-  const day = now.getDay();
-  const hour = now.getHours();
-  const minute = now.getMinutes();
-  const currentTime = hour + minute / 60;
-  
-  // Friday between 5PM and 8PM - Post Trade still open, others closed
-  return day === 5 && currentTime >= 17 && currentTime < 20;
-};
-
-// Get live session status with Friday rule and weekend mode
-const getLiveSessionStatus = (session, now) => {
-  const day = now.getDay();
-  const hour = now.getHours();
-  const minute = now.getMinutes();
-  const second = now.getSeconds();
-  const currentTimeInSeconds = hour * 3600 + minute * 60 + second;
-  
-  const startSeconds = Math.floor(session.start) * 3600 + Math.round((session.start % 1) * 60) * 60;
-  const endSeconds = session.end === 24 ? 24 * 3600 : Math.floor(session.end) * 3600 + Math.round((session.end % 1) * 60) * 60;
-  
-  // Check weekend mode (Friday 5PM to Sunday 8PM)
-  const currentTime = hour + minute / 60;
-  const isWeekendPeriod = (day === 5 && currentTime >= 17) || 
-                          day === 6 || 
-                          (day === 0 && currentTime < 20);
-  
-  // Friday rule: After 5PM Friday, only Post Trade can be open (until 8PM)
-  const isFridayAfter5PM = day === 5 && currentTime >= 17;
-  
-  let isOpen = false;
-  let secondsRemaining = 0;
-  
-  // Calculate base open status
-  if (session.end > session.start) {
-    // Normal session (doesn't span midnight)
-    isOpen = currentTimeInSeconds >= startSeconds && currentTimeInSeconds < endSeconds;
-  } else {
-    // Session spans midnight (Asia Range: 20:00 - 24:00)
-    isOpen = currentTimeInSeconds >= startSeconds || currentTimeInSeconds < endSeconds;
-  }
-  
-  // Apply Friday rule
-  if (isFridayAfter5PM) {
-    if (session.name === "Post Trade") {
-      // Post Trade stays open until 8PM on Friday
-      isOpen = currentTime < 20;
-    } else {
-      // All other sessions close at 5PM Friday
-      isOpen = false;
-    }
-  }
-  
-  // Weekend mode - everything closed
-  if (isWeekendPeriod && !isFridayAfter5PM) {
-    isOpen = false;
-  }
-  // Sunday after 8PM - normal operations resume, check if Asia should open
-  if (day === 0 && currentTime >= 20) {
-    if (session.end > session.start) {
-      isOpen = currentTimeInSeconds >= startSeconds && currentTimeInSeconds < endSeconds;
-    } else {
-      isOpen = currentTimeInSeconds >= startSeconds || currentTimeInSeconds < endSeconds;
-    }
-  }
-  
-  // Calculate countdown
-  if (isWeekendPeriod && session.name !== "Post Trade") {
-    // During weekend, show countdown to next Asia Range open (Sunday 8PM)
-    if (session.name === "Asia Range") {
-      // Calculate time until Sunday 8PM
-      let daysUntilSunday = 0;
-      if (day === 5) daysUntilSunday = 2;
-      else if (day === 6) daysUntilSunday = 1;
-      else if (day === 0) daysUntilSunday = 0;
-      
-      const sundayOpenSeconds = 20 * 3600; // 8PM
-      if (day === 0 && currentTimeInSeconds >= sundayOpenSeconds) {
-        // It's Sunday after 8PM, calculate normally
-        secondsRemaining = 0;
-      } else if (day === 0) {
-        secondsRemaining = sundayOpenSeconds - currentTimeInSeconds;
-      } else {
-        secondsRemaining = daysUntilSunday * 24 * 3600 + (sundayOpenSeconds - currentTimeInSeconds + 24 * 3600) % (24 * 3600);
-        if (day === 5) {
-          secondsRemaining = (24 * 3600 - currentTimeInSeconds) + 24 * 3600 + sundayOpenSeconds;
-        } else if (day === 6) {
-          secondsRemaining = (24 * 3600 - currentTimeInSeconds) + sundayOpenSeconds;
-        }
-      }
-    } else {
-      // Other sessions - show "Weekend"
-      secondsRemaining = -1; // Flag for weekend display
-    }
-  } else if (isOpen) {
-    // Calculate time until close
-    if (session.end > session.start) {
-      secondsRemaining = endSeconds - currentTimeInSeconds;
-    } else {
-      // Session spans midnight
-      if (currentTimeInSeconds >= startSeconds) {
-        secondsRemaining = (24 * 3600 - currentTimeInSeconds) + endSeconds;
-      } else {
-        secondsRemaining = endSeconds - currentTimeInSeconds;
-      }
-    }
-    
-    // Friday rule for Post Trade
-    if (isFridayAfter5PM && session.name === "Post Trade") {
-      const fridayCloseSeconds = 20 * 3600; // 8PM
-      secondsRemaining = fridayCloseSeconds - currentTimeInSeconds;
-    }
-  } else {
-    // Calculate time until open
-    if (session.end > session.start) {
-      if (currentTimeInSeconds < startSeconds) {
-        secondsRemaining = startSeconds - currentTimeInSeconds;
-      } else {
-        secondsRemaining = (24 * 3600 - currentTimeInSeconds) + startSeconds;
-      }
-    } else {
-      // Session spans midnight
-      if (currentTimeInSeconds < startSeconds) {
-        secondsRemaining = startSeconds - currentTimeInSeconds;
-      } else {
-        secondsRemaining = startSeconds - currentTimeInSeconds + 24 * 3600;
-      }
-    }
-  }
-  
-  // Format countdown
-  const hours = Math.floor(secondsRemaining / 3600);
-  const mins = Math.floor((secondsRemaining % 3600) / 60);
-  const secs = secondsRemaining % 60;
-  
-  let label = "";
-  if (secondsRemaining === -1) {
-    label = "Weekend";
-  } else if (isOpen) {
-    label = `Closes in ${hours}h ${mins}m`;
-  } else {
-    label = `Opens in ${hours}h ${mins}m`;
-  }
-  
-  return {
-    isOpen,
-    hours,
-    mins,
-    secs,
-    secondsRemaining,
-    label
-  };
 };
 
 const getCurrentChecklistSession = () => {
