@@ -9,6 +9,8 @@ const TIMEZONE = "America/Toronto";
 
 // Symbol configuration
 const SYMBOLS = {
+  NQ: { name: "NQ", valuePerPoint: 20, unit: "points" },
+  ES: { name: "ES", valuePerPoint: 50, unit: "points" },
   MNQ: { name: "MNQ", valuePerPoint: 2, unit: "points" },
   MES: { name: "MES", valuePerPoint: 5, unit: "points" },
   "MGC1!": { name: "MGC1!", valuePerPoint: 10, unit: "price" },
@@ -403,7 +405,7 @@ const SessionGridCard = ({ session, now }) => {
           status.isOpen 
             ? "bg-crtv-success/15 text-crtv-success" 
             : "bg-crtv-loss/15 text-crtv-loss"
-        }`}>
+        }`}>    
           {status.isOpen ? "OPEN" : "CLOSED"}
         </div>
       </div>
@@ -412,7 +414,7 @@ const SessionGridCard = ({ session, now }) => {
       <span className="text-[10px] text-white/40 font-mono">{session.timeLabel}</span>
       
       {/* Countdown */}
-      <span className={`text-[10px] font-mono ${status.isOpen ? 'text-crtv-success/80' : 'text-white/50'}`}>
+      <span className={`text-[10px] font-mono ${status.isOpen ? 'text-crtv-success/80' : 'text-white/50'}`}>  
         {status.label}
       </span>
     </div>
@@ -648,9 +650,7 @@ const ChecklistItem = ({ item, checked, onToggle, sessionColor }) => {
         >
           {checked && <Check className="w-4 h-4" style={{ color: sessionColor }} />}
         </div>
-        <span className={`text-sm text-white/90 transition-all duration-200 ${checked ? 'line-through text-white/50' : ''}`}>
-          {item.text}
-        </span>
+        <span className={`text-sm text-white/90 transition-all duration-200 ${checked ? 'line-through text-white/50' : ''}`}>{item.text}</span>
       </div>
       <span className="text-xs font-mono text-white/30">{item.num}</span>
     </div>
