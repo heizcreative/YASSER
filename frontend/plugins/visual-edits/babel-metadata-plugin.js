@@ -1,2159 +1,949 @@
-// babel-metadata-plugin.js
-// Babel plugin for JSX transformation - adds metadata to all elements
-const path = require("path");
+// dev-server-setup.js
+// Dev server middleware configuration for visual editing
 const fs = require("fs");
+const path = require("path");
+const express = require("express");
+const { execSync } = require("child_process");
 
 // ───────────────────────────────────────────────────────────────────────────────
-// ===== Dynamic composite detection (auto-exclude) =====
+// Variable Edit Handler - For editing dynamic content from traceable sources
+// ───────────────────────────────────────────────────────────────────────────────
+
 const EXTENSIONS = [".tsx", ".ts", ".jsx", ".js"];
-const PROJECT_ROOT = path.resolve(__dirname, '../..'); // frontend root (../../ from plugins/visual-edits/)
-const SRC_ALIAS = path.resolve(PROJECT_ROOT, "src");
 
-const RESOLVE_CACHE = new Map(); // key: fromFile::source -> absPath | null
-const FILE_AST_CACHE = new Map(); // absPath -> { ast, mtimeMs }
-const PORTAL_COMP_CACHE = new Map(); // key: absPath::exportName -> boolean
-const DYNAMIC_COMP_CACHE = new Map(); // key: absPath::exportName -> boolean
-const BINDING_DYNAMIC_CACHE = new WeakMap(); // node -> boolean
-
-// Cache for cross-file prop source tracking
-// Key: "absoluteFilePath::ComponentName::propName"
-// Value: { sourceInfo, arrayContext, fromFile }
-const PROP_SOURCE_CACHE = new Map();
-
-function resolveImportPath(source, fromFile) {
-  const cacheKey = `${fromFile}::${source}`;
-  if (RESOLVE_CACHE.has(cacheKey)) return RESOLVE_CACHE.get(cacheKey);
-
+/**
+ * Resolves an import path to an absolute file path
+ * @param {string} source - Import source (e.g., "@/data/products" or "./utils")
+ * @param {string} frontendRoot - Root directory of the frontend
+ * @returns {string|null} Absolute path or null if not found
+ */
+function resolveSourceFile(source, frontendRoot) {
   let base;
+
   if (source.startsWith("@/")) {
-    base = path.join(SRC_ALIAS, source.slice(2));
+    base = path.join(frontendRoot, "src", source.slice(2));
   } else if (source.startsWith("./") || source.startsWith("../")) {
-    base = path.resolve(path.dirname(fromFile), source);
+    base = path.resolve(frontendRoot, "src", source);
   } else {
-    // bare specifier (node_modules) — skip analysis
-    RESOLVE_CACHE.set(cacheKey, null);
-    return null;
+    return null; // External package
   }
 
-  // try direct file
+  // Try direct file with extensions
   for (const ext of EXTENSIONS) {
     const file = base.endsWith(ext) ? base : base + ext;
     if (fs.existsSync(file) && fs.statSync(file).isFile()) {
-      RESOLVE_CACHE.set(cacheKey, file);
       return file;
     }
   }
-  // try index.* in directory
+
+  // Try index file in directory
   if (fs.existsSync(base) && fs.statSync(base).isDirectory()) {
     for (const ext of EXTENSIONS) {
-      const idx = path.join(base, "index" + ext);
-      if (fs.existsSync(idx)) {
-        RESOLVE_CACHE.set(cacheKey, idx);
-        return idx;
+      const indexFile = path.join(base, "index" + ext);
+      if (fs.existsSync(indexFile)) {
+        return indexFile;
       }
     }
   }
 
-  RESOLVE_CACHE.set(cacheKey, null);
   return null;
 }
 
 /**
- * Gets the absolute path of an imported component's source file.
- * Returns null if the component is defined in the same file.
+ * Validates if a variable edit request is valid and safe
+ * @param {Object} change - The change request
+ * @returns {{valid: boolean, error?: string}}
  */
-function getComponentSourcePath(binding, state) {
-  if (!binding || !binding.path) return null;
-
-  const bindingPath = binding.path;
-  const fileFrom = state.filename || state.file?.opts?.filename || __filename;
-
-  if (bindingPath.isImportSpecifier()) {
-    const from = bindingPath.parent.source.value;
-    return resolveImportPath(from, fileFrom);
+function validateVariableEdit(change) {
+  if (!change.variableName) {
+    return { valid: false, error: "Missing variableName" };
   }
 
-  if (bindingPath.isImportDefaultSpecifier()) {
-    const from = bindingPath.parent.source.value;
-    return resolveImportPath(from, fileFrom);
+  if (change.newValue === undefined) {
+    return { valid: false, error: "Missing newValue" };
   }
 
-  return null; // Same-file binding
+  // Prevent code injection - only allow primitive values
+  if (typeof change.newValue === "string") {
+    // Disallow strings that look like code
+    if (change.newValue.includes("${") || change.newValue.includes("`")) {
+      return { valid: false, error: "Template literals not allowed in newValue" };
+    }
+  }
+
+  return { valid: true };
 }
 
-function parseFileAst(absPath, parser) {
-  try {
-    const stat = fs.statSync(absPath);
-    const cached = FILE_AST_CACHE.get(absPath);
-    if (cached && cached.mtimeMs === stat.mtimeMs) return cached.ast;
+/**
+ * Processes a variable edit request
+ * @param {Object} change - The change request with sourceFile, variableName, etc.
+ * @param {string} frontendRoot - Root directory of the frontend
+ * @param {Object} babelTools - { parser, traverse, generate, t }
+ * @returns {{success: boolean, file?: string, error?: string}}
+ */
+function processVariableEdit(change, frontendRoot, babelTools) {
+  const { parser, traverse, generate, t } = babelTools;
 
-    const code = fs.readFileSync(absPath, "utf8");
-    const ast = parser.parse(code, {
+  // Resolve the source file
+  // Prefer absolute path (sourceFileAbs) if provided, otherwise resolve from sourceFile
+  let targetFile;
+  if (change.sourceFileAbs) {
+    // Use absolute path directly
+    targetFile = change.sourceFileAbs;
+  } else if (change.sourceFile) {
+    targetFile = resolveSourceFile(change.sourceFile, frontendRoot);
+    if (!targetFile) {
+      return { success: false, error: `Could not resolve source file: ${change.sourceFile}` };
+    }
+  } else {
+    return { success: false, error: "sourceFile or sourceFileAbs is required for variableEdit" };
+  }
+
+  // Security check
+  const normalizedTarget = path.normalize(targetFile);
+  if (!normalizedTarget.startsWith(frontendRoot) || normalizedTarget.includes("node_modules")) {
+    return { success: false, error: `Forbidden path: ${targetFile}` };
+  }
+
+  // Read and parse the file
+  if (!fs.existsSync(targetFile)) {
+    return { success: false, error: `File not found: ${targetFile}` };
+  }
+
+  const content = fs.readFileSync(targetFile, "utf8");
+  let ast;
+  try {
+    ast = parser.parse(content, {
       sourceType: "module",
       plugins: ["jsx", "typescript"],
     });
-    FILE_AST_CACHE.set(absPath, { ast, mtimeMs: stat.mtimeMs });
-    return ast;
-  } catch (error) {
-    return null;
+  } catch (parseError) {
+    return { success: false, error: `Parse error: ${parseError.message}` };
   }
+
+  // Find and modify the variable
+  let modified = false;
+  let oldValue = null;
+
+  traverse(ast, {
+    VariableDeclarator(nodePath) {
+      // Match by name and optionally by line
+      if (!t.isIdentifier(nodePath.node.id)) return;
+      if (nodePath.node.id.name !== change.variableName) return;
+
+      // If line is specified, verify it matches
+      if (change.variableLine && nodePath.node.loc?.start.line !== change.variableLine) {
+        return;
+      }
+
+      const init = nodePath.node.init;
+      if (!init) return;
+
+      // Handle different value types
+      if (change.arrayIndex !== undefined) {
+        // Array element modification
+        if (!t.isArrayExpression(init)) {
+          return;
+        }
+
+        const elements = init.elements;
+        if (change.arrayIndex < 0 || change.arrayIndex >= elements.length) {
+          return;
+        }
+
+        const element = elements[change.arrayIndex];
+        if (!element) return;
+
+        if (change.propertyPath) {
+          // Modify property within array element (e.g., PRODUCTS[1].name)
+          if (!t.isObjectExpression(element)) {
+            return;
+          }
+
+          const result = modifyObjectProperty(element, change.propertyPath, change.newValue, t);
+          if (result.success) {
+            oldValue = result.oldValue;
+            modified = true;
+          }
+        } else {
+          // Replace entire array element
+          oldValue = generate(element).code;
+          if (typeof change.newValue === "string") {
+            elements[change.arrayIndex] = t.stringLiteral(change.newValue);
+          } else if (typeof change.newValue === "number") {
+            elements[change.arrayIndex] = t.numericLiteral(change.newValue);
+          } else if (typeof change.newValue === "object") {
+            // For objects, parse the JSON and create an object expression
+            elements[change.arrayIndex] = jsonToAst(change.newValue, t);
+          }
+          modified = true;
+        }
+      } else if (change.propertyPath) {
+        // Object property modification (e.g., CONFIG.title)
+        if (!t.isObjectExpression(init)) {
+          return;
+        }
+
+        const result = modifyObjectProperty(init, change.propertyPath, change.newValue, t);
+        if (result.success) {
+          oldValue = result.oldValue;
+          modified = true;
+        }
+      } else {
+        // Direct value replacement
+        if (t.isStringLiteral(init)) {
+          oldValue = init.value;
+          init.value = String(change.newValue);
+          modified = true;
+        } else if (t.isNumericLiteral(init)) {
+          oldValue = init.value;
+          init.value = Number(change.newValue);
+          modified = true;
+        }
+      }
+
+      if (modified) {
+        nodePath.stop();
+      }
+    },
+  });
+
+  if (!modified) {
+    return { success: false, error: `Variable "${change.variableName}" not found or not editable` };
+  }
+
+  // Generate updated code
+  const { code } = generate(ast, {
+    retainLines: true,
+    retainFunctionParens: true,
+    comments: true,
+  });
+
+  // Write the file
+  fs.writeFileSync(targetFile, code, "utf8");
+
+  return {
+    success: true,
+    file: targetFile,
+    oldValue,
+    newValue: change.newValue,
+  };
 }
 
-function jsxNameOf(openingEl, t) {
-  const n = openingEl?.name;
-  if (t.isJSXIdentifier(n)) return n.name;
-  if (t.isJSXMemberExpression(n)) return n.property.name; // <X.Y>
+/**
+ * Modifies a property within an ObjectExpression
+ * @param {Object} objectExpr - The ObjectExpression AST node
+ * @param {string} propertyPath - Dot-notation path (e.g., "name" or "address.city")
+ * @param {*} newValue - The new value to set
+ * @param {Object} t - Babel types
+ * @returns {{success: boolean, oldValue?: string}}
+ */
+function modifyObjectProperty(objectExpr, propertyPath, newValue, t) {
+  const parts = propertyPath.split(".");
+  let current = objectExpr;
+
+  // Navigate to the parent of the target property
+  for (let i = 0; i < parts.length - 1; i++) {
+    const prop = findProperty(current, parts[i], t);
+    if (!prop || !t.isObjectExpression(prop.value)) {
+      return { success: false };
+    }
+    current = prop.value;
+  }
+
+  // Find and modify the target property
+  const targetPropName = parts[parts.length - 1];
+  const targetProp = findProperty(current, targetPropName, t);
+
+  if (!targetProp) {
+    return { success: false };
+  }
+
+  let oldValue;
+  if (t.isStringLiteral(targetProp.value)) {
+    oldValue = targetProp.value.value;
+    targetProp.value = t.stringLiteral(String(newValue));
+    return { success: true, oldValue };
+  } else if (t.isNumericLiteral(targetProp.value)) {
+    oldValue = targetProp.value.value;
+    targetProp.value = t.numericLiteral(Number(newValue));
+    return { success: true, oldValue };
+  }
+
+  return { success: false };
+}
+
+/**
+ * Finds a property in an ObjectExpression by name
+ */
+function findProperty(objectExpr, propName, t) {
+  if (!t.isObjectExpression(objectExpr)) return null;
+
+  for (const prop of objectExpr.properties) {
+    if (t.isObjectProperty(prop)) {
+      if (t.isIdentifier(prop.key) && prop.key.name === propName) {
+        return prop;
+      }
+      if (t.isStringLiteral(prop.key) && prop.key.value === propName) {
+        return prop;
+      }
+    }
+  }
   return null;
 }
 
-const PORTAL_SUFFIX_RE =
-  /(Trigger|Portal|Content|Overlay|Viewport|Anchor|Arrow)$/;
-
-function isPortalishName(name, RADIX_ROOTS) {
-  if (!name) return false;
-  return RADIX_ROOTS.has(name) || PORTAL_SUFFIX_RE.test(name);
+/**
+ * Converts a JSON value to an AST node
+ */
+function jsonToAst(value, t) {
+  if (value === null) {
+    return t.nullLiteral();
+  }
+  if (typeof value === "string") {
+    return t.stringLiteral(value);
+  }
+  if (typeof value === "number") {
+    return t.numericLiteral(value);
+  }
+  if (typeof value === "boolean") {
+    return t.booleanLiteral(value);
+  }
+  if (Array.isArray(value)) {
+    return t.arrayExpression(value.map(v => jsonToAst(v, t)));
+  }
+  if (typeof value === "object") {
+    return t.objectExpression(
+      Object.entries(value).map(([k, v]) =>
+        t.objectProperty(t.identifier(k), jsonToAst(v, t))
+      )
+    );
+  }
+  return t.nullLiteral();
 }
 
-const isStaticLiteralExpression = (expr, t) =>
-  t.isStringLiteral(expr) ||
-  t.isNumericLiteral(expr) ||
-  t.isBooleanLiteral(expr) ||
-  t.isNullLiteral(expr) ||
-  (t.isTemplateLiteral(expr) && expr.expressions.length === 0);
+// 🔍 Read Supervisor code-server password from conf.d
+function getCodeServerPassword() {
+  try {
+    const conf = fs.readFileSync(
+      "/etc/supervisor/conf.d/supervisord_code_server.conf",
+      "utf8",
+    );
 
-const buildDynamicExpressionWrapper = (child, t) =>
-  t.jsxElement(
-    t.jsxOpeningElement(
-      t.jsxIdentifier("span"),
-      [
-        t.jsxAttribute(
-          t.jsxIdentifier("data-ve-dynamic"),
-          t.stringLiteral("true"),
-        ),
-        t.jsxAttribute(
-          t.jsxIdentifier("x-excluded"),
-          t.stringLiteral("true"),
-        ),
-        t.jsxAttribute(
-          t.jsxIdentifier("style"),
-          t.jsxExpressionContainer(
-            t.objectExpression([
-              t.objectProperty(
-                t.identifier("display"),
-                t.stringLiteral("contents"),
-              ),
-            ]),
-          ),
-        ),
-      ],
-      false,
-    ),
-    t.jsxClosingElement(t.jsxIdentifier("span")),
-    [child],
-    false,
-  );
-
-const wrapDynamicExpressionChildren = (jsxPath, t) => {
-  const children = jsxPath.node.children || [];
-  let didChange = false;
-
-  const nextChildren = children.map((child) => {
-    if (
-      t.isJSXExpressionContainer(child) &&
-      !t.isJSXEmptyExpression(child.expression) &&
-      !isStaticLiteralExpression(child.expression, t)
-    ) {
-      didChange = true;
-      return buildDynamicExpressionWrapper(child, t);
-    }
-    return child;
-  });
-
-  if (didChange) {
-    jsxPath.node.children = nextChildren;
+    // Match environment=PASSWORD="value"
+    const match = conf.match(/PASSWORD="([^"]+)"/);
+    return match ? match[1] : null;
+  } catch {
+    return null;
   }
-};
+}
 
-// Analyze a specific exported component in a file
-function fileExportHasPortals({
-  absPath,
-  exportName, // string or "default"
-  t,
-  traverse,
-  parser,
-  RADIX_ROOTS,
-  depth = 0,
-  maxDepth = 3,
-}) {
-  if (!absPath || depth > maxDepth) return false;
-  const cacheKey = `${absPath}::${exportName}`;
-  if (PORTAL_COMP_CACHE.has(cacheKey)) return PORTAL_COMP_CACHE.get(cacheKey);
+const SUP_PASS = getCodeServerPassword();
 
-  const ast = parseFileAst(absPath, parser);
-  if (!ast) {
-    PORTAL_COMP_CACHE.set(cacheKey, false);
-    return false;
-  }
+// Dev server setup function
+function setupDevServer(config) {
+  config.setupMiddlewares = (middlewares, devServer) => {
+    if (!devServer) throw new Error("webpack-dev-server not defined");
+    devServer.app.use(express.json());
 
-  // Map local imports -> file paths for recursive checks
-  const importMap = new Map(); // localName -> { absPath, importName }
-  traverse(ast, {
-    ImportDeclaration(p) {
-      const src = p.node.source.value;
-      const target = resolveImportPath(src, absPath);
-      if (!target) return;
-      p.node.specifiers.forEach((s) => {
-        if (t.isImportSpecifier(s)) {
-          importMap.set(s.local.name, {
-            absPath: target,
-            importName: s.imported.name,
-          });
-        } else if (t.isImportDefaultSpecifier(s)) {
-          importMap.set(s.local.name, {
-            absPath: target,
-            importName: "default",
-          });
-        }
-      });
-    },
-  });
+    // CORS origin validation
+    const isAllowedOrigin = (origin) => {
+      if (!origin) return false;
 
-  // Find the component declaration for exportName
-  let compPaths = [];
-
-  traverse(ast, {
-    ExportDefaultDeclaration(p) {
-      if (exportName !== "default") return;
-      const decl = p.node.declaration;
-      if (
-        t.isFunctionDeclaration(decl) ||
-        t.isArrowFunctionExpression(decl) ||
-        t.isFunctionExpression(decl)
-      ) {
-        compPaths.push(p.get("declaration"));
-      } else if (t.isIdentifier(decl)) {
-        const bind = p.scope.getBinding(decl.name);
-        if (bind) compPaths.push(bind.path);
+      // Allow localhost and 127.0.0.1 on any port
+      if (origin.match(/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/)) {
+        return true;
       }
-    },
-    ExportNamedDeclaration(p) {
-      if (exportName === "default") return;
-      if (p.node.declaration) {
-        const d = p.node.declaration;
-        if (t.isFunctionDeclaration(d) && d.id?.name === exportName) {
-          compPaths.push(p.get("declaration"));
-        }
-        if (t.isVariableDeclaration(d)) {
-          d.declarations.forEach((vd, i) => {
-            if (t.isIdentifier(vd.id) && vd.id.name === exportName) {
-              compPaths.push(p.get(`declaration.declarations.${i}.init`));
-            }
-          });
-        }
-      } else {
-        p.node.specifiers.forEach((s) => {
-          if (
-            t.isExportSpecifier(s) &&
-            t.isIdentifier(s.exported) &&
-            s.exported.name === exportName &&
-            t.isIdentifier(s.local)
-          ) {
-            const bind = p.scope.getBinding(s.local.name);
-            if (bind) compPaths.push(bind.path);
-          }
-        });
+
+      // Allow all emergent.sh subdomains
+      if (origin.match(/^https:\/\/([a-zA-Z0-9-]+\.)*emergent\.sh$/)) {
+        return true;
       }
-    },
-  });
 
-  if (compPaths.length === 0) {
-    PORTAL_COMP_CACHE.set(cacheKey, false);
-    return false;
-  }
+      // Allow all emergentagent.com subdomains
+      if (origin.match(/^https:\/\/([a-zA-Z0-9-]+\.)*emergentagent\.com$/)) {
+        return true;
+      }
 
-  let found = false;
+      // Allow all appspot.com subdomains (for App Engine)
+      if (origin.match(/^https:\/\/([a-zA-Z0-9-]+\.)*appspot\.com$/)) {
+        return true;
+      }
 
-  // Track visited paths to prevent infinite recursion with circular component dependencies
-  const visitedPaths = new WeakSet();
+      return false;
+    };
 
-  function subtreeHasPortals(nodePath) {
-    if (!nodePath || !nodePath.node) return false;
-    if (visitedPaths.has(nodePath.node)) return false;
-    visitedPaths.add(nodePath.node);
+    // ✅ Health check (no auth)
+    devServer.app.get("/ping", (req, res) => {
+      res.json({ status: "ok", time: new Date().toISOString() });
+    });
 
-    let hit = false;
-    nodePath.traverse({
-      JSXOpeningElement(op) {
-        if (hit) return;
-        const name = jsxNameOf(op.node, t);
-        if (isPortalishName(name, RADIX_ROOTS)) {
-          hit = true;
-          return;
-        }
-        if (/^[A-Z]/.test(name || "")) {
-          // capitalized child: may itself be portalish
-          const binding = op.scope.getBinding(name);
-          if (binding && binding.path) {
-            const childHas = subtreeHasPortals(binding.path);
-            if (childHas) {
-              hit = true;
-              return;
-            }
-          } else if (importMap.has(name)) {
-            const { absPath: childPath, importName } = importMap.get(name);
-            const childHas = fileExportHasPortals({
-              absPath: childPath,
-              exportName: importName,
-              t,
-              traverse,
-              parser,
-              RADIX_ROOTS,
-              depth: depth + 1,
+    // ✅ Protected file editing endpoint with AST processing
+    devServer.app.post("/edit-file", (req, res) => {
+      // Validate and set CORS headers
+      const origin = req.get("Origin");
+      if (origin && isAllowedOrigin(origin)) {
+        res.header("Access-Control-Allow-Origin", origin);
+        res.header("Access-Control-Allow-Headers", "Content-Type, x-api-key");
+      }
+
+      // 🔑 Check header against Supervisor password
+      const key = req.get("x-api-key");
+      if (!SUP_PASS || key !== SUP_PASS) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      const { changes } = req.body;
+
+      if (!changes || !Array.isArray(changes) || changes.length === 0) {
+        return res.status(400).json({ error: "No changes provided" });
+      }
+
+      try {
+        // Track all edits for response
+        const edits = [];
+        const rejectedChanges = [];
+
+        // Import Babel libraries (needed for both variableEdit and regular edits)
+        const parser = require("@babel/parser");
+        const traverse = require("@babel/traverse").default;
+        const generate = require("@babel/generator").default;
+        const t = require("@babel/types");
+        const frontendRoot = path.resolve(__dirname, '../..');
+
+        // Helper function to get consistent relative path
+        const getRelativePath = (absolutePath) => {
+          const rel = path.relative(frontendRoot, absolutePath);
+          return '/' + rel;
+        };
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // Process variableEdit changes separately (they target data source files)
+        // ═══════════════════════════════════════════════════════════════════════
+        const variableEditChanges = changes.filter(c => c.type === "variableEdit");
+        const otherChanges = changes.filter(c => c.type !== "variableEdit");
+
+        for (const change of variableEditChanges) {
+          console.log(`[backend] Processing variableEdit change:`, {
+            sourceFile: change.sourceFile,
+            variableName: change.variableName,
+            arrayIndex: change.arrayIndex,
+            propertyPath: change.propertyPath,
+          });
+
+          // Validate the change request
+          const validation = validateVariableEdit(change);
+          if (!validation.valid) {
+            rejectedChanges.push({
+              change,
+              reason: validation.error,
             });
-            if (childHas) {
-              hit = true;
-              return;
+            continue;
+          }
+
+          // Process the variable edit
+          const result = processVariableEdit(change, frontendRoot, {
+            parser,
+            traverse,
+            generate,
+            t,
+          });
+
+          if (result.success) {
+            edits.push({
+              file: getRelativePath(result.file),
+              type: "variableEdit",
+              variableName: change.variableName,
+              arrayIndex: change.arrayIndex,
+              propertyPath: change.propertyPath,
+              oldData: result.oldValue,
+              newData: result.newValue,
+            });
+
+            // Commit the change to git
+            const timestamp = Date.now();
+            try {
+              execSync(`git -c user.name="visual-edit" -c user.email="support@emergent.sh" add "${result.file}"`);
+              execSync(`git -c user.name="visual-edit" -c user.email="support@emergent.sh" commit -m "visual_edit_variable_${timestamp}"`);
+            } catch (gitError) {
+              console.error(`Git commit failed for variableEdit: ${gitError.message}`);
             }
+          } else {
+            rejectedChanges.push({
+              change,
+              reason: result.error,
+            });
           }
         }
-      },
-    });
-    return hit;
-  }
 
-  for (const pth of compPaths) {
-    if (!pth || !pth.node) continue;
-    if (subtreeHasPortals(pth)) {
-      found = true;
-      break;
-    }
-  }
+        // ═══════════════════════════════════════════════════════════════════════
+        // Process regular JSX changes (className, textContent, content)
+        // ═══════════════════════════════════════════════════════════════════════
 
-  PORTAL_COMP_CACHE.set(cacheKey, found);
-  return found;
-}
-
-// Decide at a usage site whether <ElementName /> is a composite that should be excluded
-function usageIsCompositePortal({
-  elementName,
-  jsxPath,
-  state,
-  t,
-  traverse,
-  parser,
-  RADIX_ROOTS,
-}) {
-  // Same-file binding?
-  const binding = jsxPath.scope.getBinding(elementName);
-  if (binding && binding.path) {
-    // Analyze the definition directly
-    let hit = false;
-    binding.path.traverse({
-      JSXOpeningElement(op) {
-        if (hit) return;
-        const name = jsxNameOf(op.node, t);
-        if (isPortalishName(name, RADIX_ROOTS)) {
-          hit = true;
-          return;
-        }
-        if (/^[A-Z]/.test(name || "")) {
-          const innerBinding = op.scope.getBinding(name);
-          if (innerBinding && innerBinding.path) {
-            innerBinding.path.traverse(this.visitors);
+        // Group changes by fileName
+        const changesByFile = {};
+        otherChanges.forEach((change) => {
+          if (!changesByFile[change.fileName]) {
+            changesByFile[change.fileName] = [];
           }
-        }
-      },
-    });
-    if (hit) return true;
-  }
+          changesByFile[change.fileName].push(change);
+        });
 
-  // Imported binding (named)
-  if (binding && binding.path && binding.path.isImportSpecifier()) {
-    const from = binding.path.parent.source.value;
-    const fileFrom =
-      state.filename ||
-      state.file?.opts?.filename ||
-      state.file?.sourceFileName ||
-      __filename;
-    const absPath = resolveImportPath(from, fileFrom);
-    if (!absPath) return false;
-    const exportName = binding.path.node.imported.name;
-    return fileExportHasPortals({
-      absPath,
-      exportName,
-      t,
-      traverse,
-      parser,
-      RADIX_ROOTS,
-    });
-  }
+        // Process each file's changes
+        Object.entries(changesByFile).forEach(([fileName, fileChanges]) => {
+          const findFileRecursive = (dir, filename) => {
+            try {
+              const files = fs.readdirSync(dir, { withFileTypes: true });
 
-  // Imported binding (default)
-  if (binding && binding.path && binding.path.isImportDefaultSpecifier()) {
-    const from = binding.path.parent.source.value;
-    const fileFrom =
-      state.filename ||
-      state.file?.opts?.filename ||
-      state.file?.sourceFileName ||
-      __filename;
-    const absPath = resolveImportPath(from, fileFrom);
-    if (!absPath) return false;
-    return fileExportHasPortals({
-      absPath,
-      exportName: "default",
-      t,
-      traverse,
-      parser,
-      RADIX_ROOTS,
-    });
-  }
+              for (const file of files) {
+                const fullPath = path.join(dir, file.name);
 
-  return false;
-}
-
-// ───────────────────────────────────────────────────────────────────────────────
-// Babel plugin for JSX transformation - adds metadata to all elements
-const babelMetadataPlugin = ({ types: t }) => {
-  const fileNameCache = new Map();
-
-  const ARRAY_METHODS = new Set([
-    "map",
-    "forEach",
-    "filter",
-    "reduce",
-    "reduceRight",
-    "flatMap",
-    "find",
-    "findIndex",
-    "some",
-    "every",
-  ]);
-
-  // ───────────────────────────────────────────────────────────────────────────
-  // Expression Source Analysis - Track where dynamic content comes from
-  // ───────────────────────────────────────────────────────────────────────────
-
-  /**
-   * Analyzes an expression to determine its source type and traceability
-   * @param {NodePath} exprPath - The expression path to analyze
-   * @param {Object} state - Babel state with filename info
-   * @returns {Object} Source info: { type, varName, file, line, path, isEditable }
-   */
-  function analyzeExpression(exprPath, state) {
-    if (!exprPath || !exprPath.node) return null;
-
-    const node = exprPath.node;
-
-    // Handle Identifier (simple variable reference like {name})
-    if (t.isIdentifier(node)) {
-      return analyzeIdentifier(node.name, exprPath, state);
-    }
-
-    // Handle MemberExpression (like item.name or obj.prop.value)
-    if (t.isMemberExpression(node)) {
-      return analyzeMemberExpression(exprPath, state);
-    }
-
-    // Handle CallExpression (like formatDate(item.date))
-    if (t.isCallExpression(node)) {
-      return { type: "computed", isEditable: false };
-    }
-
-    // Handle TemplateLiteral (like `Hello ${name}`)
-    if (t.isTemplateLiteral(node)) {
-      return { type: "template", isEditable: false };
-    }
-
-    // Handle ConditionalExpression (like condition ? a : b)
-    if (t.isConditionalExpression(node)) {
-      return { type: "computed", isEditable: false };
-    }
-
-    // Handle LogicalExpression (like a && b)
-    if (t.isLogicalExpression(node)) {
-      return { type: "computed", isEditable: false };
-    }
-
-    // Handle BinaryExpression (like a + b)
-    if (t.isBinaryExpression(node)) {
-      return { type: "computed", isEditable: false };
-    }
-
-    return { type: "unknown", isEditable: false };
-  }
-
-  /**
-   * Analyzes an identifier to determine its binding source
-   * @param {string} name - The identifier name
-   * @param {NodePath} exprPath - The expression path
-   * @param {Object} state - Babel state
-   * @param {Object} options - Options
-   * @param {boolean} options.skipArrayContext - Skip array iteration context check to avoid recursion
-   */
-  function analyzeIdentifier(name, exprPath, state, options = {}) {
-    const { skipArrayContext = false } = options;
-
-    const binding = exprPath.scope.getBinding(name);
-    if (!binding) {
-      return { type: "external", varName: name, isEditable: false };
-    }
-
-    const bindingPath = binding.path;
-
-    // Check if this identifier is an array iteration item parameter
-    // (e.g., `review` in `reviews.map((review) => ...)`)
-    // Skip this check when called from getArrayIterationContext to avoid infinite recursion
-    if (!skipArrayContext) {
-      const arrayContext = getArrayIterationContext(exprPath, state);
-      if (arrayContext && arrayContext.itemParam === name) {
-        return {
-          type: "static-imported",
-          varName: arrayContext.arrayVar,
-          file: arrayContext.arrayFile,
-          absFile: arrayContext.absFile,
-          line: arrayContext.arrayLine,
-          isEditable: arrayContext.isEditable,
-          valueType: "array-item",
-          arrayContext: arrayContext,
-        };
-      }
-    }
-
-    // Check for props (function parameters)
-    if (bindingPath.isIdentifier() && bindingPath.parentPath.isFunctionDeclaration()) {
-      // Try to trace the prop back to its source in the same file
-      const componentName = getContainingComponentName(exprPath);
-      const tracedSource = tracePropToSource(name, componentName, exprPath, state);
-
-      if (tracedSource && tracedSource.isEditable) {
-        return {
-          type: "prop",
-          varName: tracedSource.varName, // Use traced source's variable name (e.g., "reviews" not "review")
-          propName: name, // Keep original prop name for reference
-          tracedFrom: tracedSource,
-          file: tracedSource.file,
-          absFile: tracedSource.absFile,
-          line: tracedSource.line,
-          path: tracedSource.path,
-          isEditable: true,
-          arrayContext: tracedSource.arrayContext,
-        };
-      }
-
-      return { type: "prop", varName: name, isEditable: false };
-    }
-
-    // Check if it's a destructured prop from function params
-    if (bindingPath.isObjectPattern() ||
-        (bindingPath.parentPath && bindingPath.parentPath.isObjectPattern())) {
-      const funcParent = bindingPath.findParent(p =>
-        p.isFunctionDeclaration() || p.isArrowFunctionExpression() || p.isFunctionExpression()
-      );
-      if (funcParent && funcParent.node.params.some(param => {
-        if (t.isIdentifier(param)) return false;
-        if (t.isObjectPattern(param)) return true;
-        return false;
-      })) {
-        // Try to trace the prop back to its source in the same file
-        const componentName = getContainingComponentName(exprPath);
-        const tracedSource = tracePropToSource(name, componentName, exprPath, state);
-
-        if (tracedSource && tracedSource.isEditable) {
-          return {
-            type: "prop",
-            varName: tracedSource.varName, // Use traced source's variable name (e.g., "reviews" not "review")
-            propName: name, // Keep original prop name for reference
-            tracedFrom: tracedSource,
-            file: tracedSource.file,
-            absFile: tracedSource.absFile,
-            line: tracedSource.line,
-            path: tracedSource.path,
-            isEditable: true,
-            arrayContext: tracedSource.arrayContext,
-          };
-        }
-
-        return { type: "prop", varName: name, isEditable: false };
-      }
-    }
-
-    // Check for useState
-    if (bindingPath.isVariableDeclarator()) {
-      const init = bindingPath.node.init;
-      if (t.isCallExpression(init) && t.isIdentifier(init.callee)) {
-        const calleeName = init.callee.name;
-        if (calleeName === "useState" || calleeName === "useReducer" ||
-            calleeName === "useContext" || calleeName === "useMemo" ||
-            calleeName === "useCallback") {
-          return { type: "state", varName: name, isEditable: false };
-        }
-      }
-    }
-
-    // Check for imports
-    if (bindingPath.isImportSpecifier() || bindingPath.isImportDefaultSpecifier()) {
-      const importDecl = bindingPath.parentPath.node;
-      const source = importDecl.source.value;
-
-      // Only track @/ and ./ imports as potentially editable
-      if (source.startsWith("@/") || source.startsWith("./") || source.startsWith("../")) {
-        const fileFrom = state.filename || state.file?.opts?.filename || __filename;
-        const absPath = resolveImportPath(source, fileFrom);
-
-        if (absPath) {
-          // Get the original export name
-          let exportName = name;
-          if (bindingPath.isImportSpecifier() && t.isIdentifier(bindingPath.node.imported)) {
-            exportName = bindingPath.node.imported.name;
-          }
-
-          // Try to find the variable declaration in the imported file
-          const varInfo = findExportedVariableInfo(absPath, exportName);
-
-          return {
-            type: "static-imported",
-            varName: exportName,
-            file: source,
-            absFile: absPath,
-            line: varInfo?.line || null,
-            isEditable: varInfo?.isEditable || false,
-            valueType: varInfo?.valueType || null,
-          };
-        }
-      }
-
-      return { type: "external", varName: name, isEditable: false };
-    }
-
-    // Check for local const declarations
-    if (bindingPath.isVariableDeclarator()) {
-      const parent = bindingPath.parentPath;
-      if (parent.isVariableDeclaration() && parent.node.kind === "const") {
-        const init = bindingPath.node.init;
-
-        // Get the current file path for local variables
-        const currentFile = state.filename || state.file?.opts?.filename || null;
-
-        // Check if it's a simple editable value
-        if (t.isStringLiteral(init) || t.isNumericLiteral(init)) {
-          return {
-            type: "static-local",
-            varName: name,
-            absFile: currentFile,
-            line: bindingPath.node.loc?.start.line || null,
-            isEditable: true,
-            valueType: "literal",
-          };
-        }
-
-        if (t.isArrayExpression(init)) {
-          return {
-            type: "static-local",
-            varName: name,
-            absFile: currentFile,
-            line: bindingPath.node.loc?.start.line || null,
-            isEditable: true,
-            valueType: "array",
-          };
-        }
-
-        if (t.isObjectExpression(init)) {
-          return {
-            type: "static-local",
-            varName: name,
-            absFile: currentFile,
-            line: bindingPath.node.loc?.start.line || null,
-            isEditable: true,
-            valueType: "object",
-          };
-        }
-      }
-    }
-
-    return { type: "unknown", varName: name, isEditable: false };
-  }
-
-  /**
-   * Analyzes a member expression like item.name or obj.prop.value
-   */
-  function analyzeMemberExpression(exprPath, state, options = {}) {
-    const node = exprPath.node;
-
-    // Build the property path (e.g., "name" or "address.city")
-    const propPath = buildPropertyPath(node);
-
-    // Get the root object
-    let root = node;
-    while (t.isMemberExpression(root.object)) {
-      root = root.object;
-    }
-
-    const rootObj = root.object;
-
-    if (t.isIdentifier(rootObj)) {
-      const rootName = rootObj.name;
-
-      // Check if we're inside an array iteration (like .map())
-      // Skip if we're already analyzing the array source to prevent infinite recursion
-      const arrayContext = options.skipArrayContext
-        ? null
-        : getArrayIterationContext(exprPath, state);
-
-      if (arrayContext && arrayContext.itemParam === rootName) {
-        // This is item.property where item comes from array.map(item => ...)
-        return {
-          type: "static-imported",
-          varName: arrayContext.arrayVar,
-          file: arrayContext.arrayFile,
-          absFile: arrayContext.absFile,
-          line: arrayContext.arrayLine,
-          path: propPath,
-          isEditable: arrayContext.isEditable,
-          valueType: "array-item",
-          arrayContext: arrayContext,
-        };
-      }
-
-      // Analyze the root identifier
-      // Pass skipArrayContext to avoid infinite recursion when called from getArrayIterationContext
-      const rootInfo = analyzeIdentifier(rootName, exprPath, state, options);
-      if (rootInfo) {
-        return {
-          ...rootInfo,
-          path: propPath,
-        };
-      }
-    }
-
-    return { type: "unknown", path: propPath, isEditable: false };
-  }
-
-  /**
-   * Builds a dot-notation path from a MemberExpression
-   */
-  function buildPropertyPath(node) {
-    const parts = [];
-    let current = node;
-
-    while (t.isMemberExpression(current)) {
-      if (t.isIdentifier(current.property)) {
-        parts.unshift(current.property.name);
-      } else if (t.isNumericLiteral(current.property)) {
-        parts.unshift(`[${current.property.value}]`);
-      } else if (t.isStringLiteral(current.property)) {
-        parts.unshift(current.property.value);
-      }
-      current = current.object;
-    }
-
-    return parts.join(".");
-  }
-
-  /**
-   * Gets the JSX element name from an opening element
-   */
-  function getJSXElementName(openingElement) {
-    const n = openingElement?.name;
-    if (t.isJSXIdentifier(n)) return n.name;
-    if (t.isJSXMemberExpression(n)) return n.property.name;
-    return null;
-  }
-
-  /**
-   * Gets the containing component name for an expression path
-   */
-  function getContainingComponentName(exprPath) {
-    let current = exprPath;
-    while (current) {
-      if (current.isFunctionDeclaration() && current.node.id) {
-        return current.node.id.name;
-      }
-      if (current.isVariableDeclarator() && t.isIdentifier(current.node.id)) {
-        return current.node.id.name;
-      }
-      if (current.isArrowFunctionExpression() || current.isFunctionExpression()) {
-        // Check if parent is variable declarator
-        const parent = current.parentPath;
-        if (parent && parent.isVariableDeclarator() && t.isIdentifier(parent.node.id)) {
-          return parent.node.id.name;
-        }
-      }
-      current = current.parentPath;
-    }
-    return null;
-  }
-
-  /**
-   * Traces a prop back to where it was passed in the same file
-   * @param {string} propName - The prop name to trace
-   * @param {string} componentName - The component that receives the prop
-   * @param {NodePath} exprPath - The expression path for scope access
-   * @param {Object} state - Babel state
-   * @returns {Object|null} Source info if traced, null otherwise
-   */
-  function tracePropToSource(propName, componentName, exprPath, state) {
-    if (!componentName) return null;
-
-    const programPath = exprPath.findParent(p => p.isProgram());
-    if (!programPath) return null;
-
-    let tracedSource = null;
-
-    programPath.traverse({
-      JSXOpeningElement(jsxPath) {
-        if (tracedSource) return;
-
-        const elementName = getJSXElementName(jsxPath.node);
-        if (elementName !== componentName) return;
-
-        // Look for the prop being passed
-        for (const attr of jsxPath.node.attributes || []) {
-          if (!t.isJSXAttribute(attr)) continue;
-          if (!t.isJSXIdentifier(attr.name) || attr.name.name !== propName) continue;
-          if (!t.isJSXExpressionContainer(attr.value)) continue;
-
-          // Found matching prop - analyze the expression passed to it
-          const attrs = jsxPath.get('attributes');
-          const attrPath = attrs.find(
-            a => a.isJSXAttribute() &&
-                 t.isJSXIdentifier(a.node.name) &&
-                 a.node.name.name === propName
-          );
-
-          if (attrPath) {
-            const valuePath = attrPath.get('value');
-            if (valuePath && valuePath.isJSXExpressionContainer()) {
-              const innerExpr = valuePath.get('expression');
-              if (innerExpr && innerExpr.node) {
-                tracedSource = analyzeExpression(innerExpr, state);
+                // Skip excluded directories
+                if (file.isDirectory()) {
+                  if (
+                    file.name === "node_modules" ||
+                    file.name === "public" ||
+                    file.name === ".git" ||
+                    file.name === "build" ||
+                    file.name === "dist" ||
+                    file.name === "coverage"
+                  ) {
+                    continue;
+                  }
+                  const found = findFileRecursive(fullPath, filename);
+                  if (found) return found;
+                } else if (file.isFile()) {
+                  // Check if filename matches (basename without extension)
+                  const fileBaseName = file.name.replace(
+                    /\.(js|jsx|ts|tsx)$/,
+                    "",
+                  );
+                  if (fileBaseName === filename) {
+                    return fullPath;
+                  }
+                }
               }
+            } catch (err) {
+              // Ignore permission errors and continue
             }
+            return null;
+          };
+
+          // Find the file
+          let targetFile = findFileRecursive(frontendRoot, fileName);
+
+          // If still not found, default to components path with .js for new files
+          if (!targetFile) {
+            targetFile = path.resolve(
+              frontendRoot,
+              "src/components",
+              `${fileName}.js`,
+            );
           }
-        }
-      }
-    });
 
-    // If found in same file, return it
-    if (tracedSource) return tracedSource;
+          // Security check - prevent path traversal and restrict to frontend folder
+          const normalizedTarget = path.normalize(targetFile);
+          const isInFrontend =
+            normalizedTarget.startsWith(frontendRoot) &&
+            !normalizedTarget.includes("..");
+          const isNodeModules = normalizedTarget.includes("node_modules");
+          const isPublic =
+            normalizedTarget.includes("/public/") ||
+            normalizedTarget.endsWith("/public");
 
-    // Cross-file lookup
-    return lookupCrossFilePropSource(propName, componentName, state);
-  }
+          if (!isInFrontend || isNodeModules || isPublic) {
+            throw new Error(`Forbidden path for file ${fileName}`);
+          }
 
-  /**
-   * Records prop source information for cross-file prop tracing.
-   */
-  function recordPropSources(componentName, jsxPath, state) {
-    const binding = jsxPath.scope.getBinding(componentName);
-    if (!binding) return;
+          // Verify file exists before attempting to read
+          if (!fs.existsSync(targetFile)) {
+            throw new Error(`File not found: ${targetFile}`);
+          }
 
-    const componentAbsPath = getComponentSourcePath(binding, state);
-    if (!componentAbsPath) return; // Same-file, existing logic handles
+          // Read the current file content
+          const currentContent = fs.readFileSync(targetFile, "utf8");
 
-    const openingElement = jsxPath.node.openingElement;
-    for (const attr of openingElement.attributes || []) {
-      if (!t.isJSXAttribute(attr)) continue;
-      if (!t.isJSXIdentifier(attr.name)) continue;
-      if (!t.isJSXExpressionContainer(attr.value)) continue;
+          // Parse the JSX file
+          const ast = parser.parse(currentContent, {
+            sourceType: "module",
+            plugins: ["jsx", "typescript"],
+          });
 
-      const propName = attr.name.name;
-
-      // Find the attribute path
-      const attrPath = jsxPath.get('openingElement.attributes').find(
-        a => a.isJSXAttribute() && a.node.name?.name === propName
-      );
-      if (!attrPath) continue;
-
-      const valuePath = attrPath.get('value.expression');
-      if (!valuePath?.node) continue;
-
-      // Analyze the expression being passed
-      const sourceInfo = analyzeExpression(valuePath, state);
-      const arrayContext = getArrayIterationContext(valuePath, state);
-
-      // Cache it
-      const cacheKey = `${componentAbsPath}::${componentName}::${propName}`;
-      PROP_SOURCE_CACHE.set(cacheKey, {
-        sourceInfo,
-        arrayContext: arrayContext || sourceInfo?.arrayContext,
-        fromFile: state.filename
-      });
-    }
-  }
-
-  /**
-   * Looks up prop source from cross-file cache.
-   */
-  function lookupCrossFilePropSource(propName, componentName, state) {
-    const currentFile = state.filename || state.file?.opts?.filename;
-    if (!currentFile) return null;
-
-    const cacheKey = `${currentFile}::${componentName}::${propName}`;
-    const cached = PROP_SOURCE_CACHE.get(cacheKey);
-
-    if (cached && cached.sourceInfo) {
-      return cached.sourceInfo;
-    }
-
-    // Cache miss - try lazy evaluation
-    return lazyEvaluatePropSource(propName, componentName, currentFile);
-  }
-
-  /**
-   * Lazily finds prop sources by scanning cached ASTs for component usages.
-   */
-  function lazyEvaluatePropSource(propName, componentName, componentFile) {
-    const traverse = require("@babel/traverse").default;
-
-    for (const [absPath, cached] of FILE_AST_CACHE) {
-      if (absPath === componentFile) continue;
-
-      const ast = cached.ast;
-      if (!ast) continue;
-
-      let result = null;
-
-      traverse(ast, {
-        ImportDeclaration(importPath) {
-          if (result) return;
-
-          const source = importPath.node.source.value;
-          const resolvedPath = resolveImportPath(source, absPath);
-          if (resolvedPath !== componentFile) return;
-
-          // Find the local name for this import
-          let localName = null;
-          for (const spec of importPath.node.specifiers) {
-            if (t.isImportSpecifier(spec) && spec.imported.name === componentName) {
-              localName = spec.local.name;
-            } else if (t.isImportDefaultSpecifier(spec)) {
-              localName = spec.local.name;
+          // Helper function to parse JSX children
+          const parseJsxChildren = (content) => {
+            if (content === undefined) {
+              return null;
             }
-          }
-          if (!localName) return;
 
-          // Search for usages of this component
-          importPath.parentPath.parentPath.traverse({
-            JSXOpeningElement(jsxPath) {
-              if (result) return;
+            const sanitizeMetaAttributes = (node) => {
+              if (t.isJSXElement(node)) {
+                node.openingElement.attributes =
+                  node.openingElement.attributes.filter((attr) => {
+                    if (
+                      t.isJSXAttribute(attr) &&
+                      t.isJSXIdentifier(attr.name)
+                    ) {
+                      return !attr.name.name.startsWith("x-");
+                    }
+                    return true;
+                  });
 
-              const elemName = getJSXElementName(jsxPath.node);
-              if (elemName !== localName) return;
+                node.children.forEach((child) =>
+                  sanitizeMetaAttributes(child),
+                );
+              } else if (t.isJSXFragment(node)) {
+                node.children.forEach((child) =>
+                  sanitizeMetaAttributes(child),
+                );
+              }
+            };
 
-              // Find the prop
-              for (const attr of jsxPath.node.attributes || []) {
-                if (!t.isJSXAttribute(attr)) continue;
-                if (!t.isJSXIdentifier(attr.name) || attr.name.name !== propName) continue;
-                if (!t.isJSXExpressionContainer(attr.value)) continue;
+            try {
+              const wrapperExpression = parser.parseExpression(
+                `(<gjs-wrapper>${content}</gjs-wrapper>)`,
+                {
+                  sourceType: "module",
+                  plugins: ["jsx", "typescript"],
+                },
+              );
 
-                const attrPath = jsxPath.get('attributes').find(
-                  a => a.isJSXAttribute() && a.node.name?.name === propName
+              if (t.isJSXElement(wrapperExpression)) {
+                const innerChildren = wrapperExpression.children || [];
+                innerChildren.forEach((child) =>
+                  sanitizeMetaAttributes(child),
+                );
+                return innerChildren;
+              }
+            } catch (parseError) {
+              // Fallback to treating content as raw text if parsing fails
+            }
+
+            return [t.jsxText(content)];
+          };
+
+          // Create a map of changes by line number for this file (array of changes per line)
+          const changesByLine = {};
+          fileChanges.forEach((change) => {
+            if (!changesByLine[change.lineNumber]) {
+              changesByLine[change.lineNumber] = [];
+            }
+            changesByLine[change.lineNumber].push(change);
+          });
+
+          // Traverse and update AST using line numbers
+          traverse(ast, {
+            JSXOpeningElement: (path) => {
+              const lineNumber = path.node.loc?.start.line;
+              if (!lineNumber) return;
+
+              const changesAtLine = changesByLine[lineNumber];
+              if (!changesAtLine || changesAtLine.length === 0) return;
+
+              // Verify this is the correct element by checking component type
+              const elementName = path.node.name.name;
+
+              // Process ALL changes for this line
+              changesAtLine.forEach((change) => {
+                if (elementName !== change.component) return;
+
+                // FIXED: Conditional processing based on change type
+                console.log(
+                  `[backend] Processing change type: ${change.type || "legacy"} for element: ${elementName}`,
                 );
 
-                if (attrPath) {
-                  const valuePath = attrPath.get('value.expression');
-                  if (valuePath?.node) {
-                    const mockState = { filename: absPath };
-                    result = analyzeExpression(valuePath, mockState);
+                if (
+                  change.type === "className" &&
+                  change.className !== undefined
+                ) {
+                  // CLASSNAME/TAILWIND PROCESSING
+                  console.log(
+                    `[backend] Processing className change:`,
+                    change.className,
+                  );
 
-                    // Cache for future
-                    const cacheKey = `${componentFile}::${componentName}::${propName}`;
-                    PROP_SOURCE_CACHE.set(cacheKey, {
-                      sourceInfo: result,
-                      arrayContext: result?.arrayContext,
-                      fromFile: absPath
+                  // Find existing className attribute
+                  let classAttr = path.node.attributes.find(
+                    (attr) =>
+                      t.isJSXAttribute(attr) &&
+                      attr.name.name === "className",
+                  );
+
+                  // Capture old className value
+                  const oldClassName = classAttr?.value?.value || "";
+
+                  if (classAttr) {
+                    // Update existing className
+                    console.log(
+                      `[backend] Updating existing className from:`,
+                      classAttr.value?.value,
+                      "to:",
+                      change.className,
+                    );
+                    classAttr.value = t.stringLiteral(change.className);
+                  } else {
+                    // Create new className attribute
+                    console.log(
+                      `[backend] Creating new className attribute:`,
+                      change.className,
+                    );
+                    const newClassAttr = t.jsxAttribute(
+                      t.jsxIdentifier("className"),
+                      t.stringLiteral(change.className),
+                    );
+                    path.node.attributes.push(newClassAttr);
+                  }
+
+                  // Track this edit
+                  edits.push({
+                    file: getRelativePath(targetFile),
+                    lineNumber: lineNumber,
+                    element: elementName,
+                    type: "className",
+                    oldData: oldClassName,
+                    newData: change.className,
+                  });
+                } else if (
+                  change.type === "textContent" &&
+                  (Array.isArray(change.textParts) ||
+                    change.textContent !== undefined)
+                ) {
+                  console.log(
+                    `[backend] Processing textContent change:`,
+                    change.textContent,
+                  );
+
+                  const parentElementPath = path.parentPath;
+                  if (parentElementPath && parentElementPath.isJSXElement()) {
+                    const jsxElementNode = parentElementPath.node;
+                    const children = jsxElementNode.children || [];
+
+                    const textParts = Array.isArray(change.textParts)
+                      ? change.textParts
+                      : null;
+
+                    if (textParts) {
+                      const textLikeNodes = children.filter(
+                        (child) =>
+                          t.isJSXText(child) ||
+                          (t.isJSXExpressionContainer(child) &&
+                            t.isStringLiteral(child.expression)),
+                      );
+
+                      const oldContent = textLikeNodes
+                        .map((child) => {
+                          if (t.isJSXText(child)) return child.value || "";
+                          if (
+                            t.isJSXExpressionContainer(child) &&
+                            t.isStringLiteral(child.expression)
+                          ) {
+                            return child.expression.value || "";
+                          }
+                          return "";
+                        })
+                        .join("");
+
+                      textLikeNodes.forEach((child, index) => {
+                        const nextValue = textParts[index] ?? "";
+                        if (t.isJSXText(child)) {
+                          child.value = nextValue;
+                        } else if (
+                          t.isJSXExpressionContainer(child) &&
+                          t.isStringLiteral(child.expression)
+                        ) {
+                          child.expression.value = nextValue;
+                        }
+                      });
+
+                      if (textParts.length > textLikeNodes.length) {
+                        const extraNodes = textParts
+                          .slice(textLikeNodes.length)
+                          .map((part) => t.jsxText(part ?? ""));
+                        jsxElementNode.children = [...children, ...extraNodes];
+                      }
+
+                      edits.push({
+                        file: getRelativePath(targetFile),
+                        lineNumber: lineNumber,
+                        element: elementName,
+                        type: "textContent",
+                        oldData: oldContent,
+                        newData: textParts.join(""),
+                      });
+                    } else {
+                      let targetTextNode = null;
+                      for (const child of children) {
+                        if (t.isJSXText(child) && child.value.trim().length > 0) {
+                          targetTextNode = child;
+                          break;
+                        }
+                      }
+
+                      const firstTextNode = targetTextNode;
+                      const fallbackWhitespaceNode = children.find(
+                        (child) => t.isJSXText(child) && child.value.trim().length === 0,
+                      );
+
+                      const newContent = change.textContent;
+                      let oldContent = "";
+
+                      const preserveWhitespace = (originalValue, updatedCore) => {
+                        const leadingWhitespace =
+                          (originalValue.match(/^\s*/) || [""])[0];
+                        const trailingWhitespace =
+                          (originalValue.match(/\s*$/) || [""])[0];
+                        return `${leadingWhitespace}${updatedCore}${trailingWhitespace}`;
+                      };
+
+                      if (firstTextNode) {
+                        oldContent = firstTextNode.value.trim();
+                        firstTextNode.value = preserveWhitespace(
+                          firstTextNode.value,
+                          newContent,
+                        );
+                      } else if (fallbackWhitespaceNode) {
+                        oldContent = "";
+                        fallbackWhitespaceNode.value = preserveWhitespace(
+                          fallbackWhitespaceNode.value,
+                          newContent,
+                        );
+                      } else {
+                        oldContent = "";
+                        const newTextNode = t.jsxText(newContent);
+                        jsxElementNode.children = [newTextNode, ...children];
+                      }
+
+                      edits.push({
+                        file: getRelativePath(targetFile),
+                        lineNumber: lineNumber,
+                        element: elementName,
+                        type: "textContent",
+                        oldData: oldContent,
+                        newData: newContent,
+                      });
+                    }
+                  }
+                } else if (
+                  change.type === "content" &&
+                  change.content !== undefined
+                ) {
+                  // CONTENT-ONLY PROCESSING
+                  console.log(
+                    `[backend] Processing content-only change:`,
+                    change.content.slice(0, 100),
+                  );
+
+                  const parentElementPath = path.parentPath;
+                  if (parentElementPath && parentElementPath.isJSXElement()) {
+                    // Capture old content before modifying
+                    const oldChildren = parentElementPath.node.children || [];
+                    const generate = require("@babel/generator").default;
+                    const oldContentAST = {
+                      type: "JSXFragment",
+                      children: oldChildren,
+                    };
+                    const oldContent = generate(oldContentAST, {}, "")
+                      .code.replace(/^<>/, "")
+                      .replace(/<\/>$/, "")
+                      .trim();
+
+                    const newChildren = parseJsxChildren(change.content);
+                    if (newChildren) {
+                      parentElementPath.node.children = newChildren;
+                    }
+
+                    // Track this edit
+                    edits.push({
+                      file: getRelativePath(targetFile),
+                      lineNumber: lineNumber,
+                      element: elementName,
+                      type: "content",
+                      oldData: oldContent,
+                      newData: change.content,
                     });
                   }
+                } else {
+                  // Track rejected change
+                  const reason = `Change must have valid type ('className', 'textContent', or 'content'). Received type: ${change.type || 'undefined'}`;
+                  rejectedChanges.push({
+                    change,
+                    reason,
+                    file: getRelativePath(targetFile),
+                    lineNumber: lineNumber,
+                    element: elementName,
+                  });
+
+                  // Still log for debugging
+                  console.error(`[backend] REJECTED: ${reason}`, change);
+                  console.error(
+                    `[backend] This change will be IGNORED to prevent contamination.`,
+                  );
                 }
-              }
-            }
+              });
+
+              // Mark all changes at this line as processed
+              delete changesByLine[lineNumber];
+            },
           });
-        }
-      });
 
-      if (result) return result;
-    }
-
-    return null;
-  }
-
-  /**
-   * Detects if we're inside an array iteration (.map(), etc.) and extracts context
-   */
-  function getArrayIterationContext(exprPath, state) {
-    // Find the parent .map() or similar call
-    const callExprParent = exprPath.findParent((p) => {
-      if (!p.isCallExpression()) return false;
-
-      const { callee } = p.node;
-      if (!t.isMemberExpression(callee) || !t.isIdentifier(callee.property)) {
-        return false;
-      }
-
-      return ARRAY_METHODS.has(callee.property.name);
-    });
-
-    if (!callExprParent) return null;
-
-    const callExpr = callExprParent.node;
-    const callee = callExpr.callee;
-
-    // Get the array being iterated
-    const arrayNode = callee.object;
-
-    // Get the callback function
-    const callback = callExpr.arguments[0];
-    if (!callback) return null;
-
-    // Get item parameter name(s)
-    let itemParam = null;
-    let indexParam = null;
-
-    if (t.isArrowFunctionExpression(callback) || t.isFunctionExpression(callback)) {
-      const params = callback.params;
-      if (params.length > 0 && t.isIdentifier(params[0])) {
-        itemParam = params[0].name;
-      }
-      if (params.length > 1 && t.isIdentifier(params[1])) {
-        indexParam = params[1].name;
-      }
-    }
-
-    if (!itemParam) return null;
-
-    // Analyze the array source
-    let arrayVar = null;
-    let arrayFile = null;
-    let absFile = null;
-    let arrayLine = null;
-    let isEditable = false;
-
-    if (t.isIdentifier(arrayNode)) {
-      arrayVar = arrayNode.name;
-      // Pass skipArrayContext to avoid infinite recursion
-      const arrayInfo = analyzeIdentifier(arrayVar, callExprParent.get("callee.object"), state, { skipArrayContext: true });
-
-      if (arrayInfo) {
-        arrayFile = arrayInfo.file || null;
-        absFile = arrayInfo.absFile || null;
-        arrayLine = arrayInfo.line || null;
-        isEditable = arrayInfo.isEditable && arrayInfo.valueType === "array";
-      }
-    } else if (t.isMemberExpression(arrayNode)) {
-      // Handle cases like data.items.map(...)
-      const memberInfo = analyzeMemberExpression(
-        callExprParent.get("callee.object"),
-        state,
-        { skipArrayContext: true }
-      );
-      if (memberInfo) {
-        arrayVar = memberInfo.varName;
-        arrayFile = memberInfo.file || null;
-        absFile = memberInfo.absFile || null;
-        arrayLine = memberInfo.line || null;
-        // Array within object is more complex, mark as not editable for now
-        isEditable = false;
-      }
-    }
-
-    return {
-      arrayVar,
-      arrayFile,
-      absFile,
-      arrayLine,
-      itemParam,
-      indexParam,
-      isEditable,
-    };
-  }
-
-  /**
-   * Finds info about an exported variable in a file
-   */
-  function findExportedVariableInfo(absPath, exportName) {
-    const parser = require("@babel/parser");
-    const traverse = require("@babel/traverse").default;
-
-    const ast = parseFileAst(absPath, parser);
-    if (!ast) return null;
-
-    let result = null;
-
-    traverse(ast, {
-      // Check export const VARIABLE = value
-      ExportNamedDeclaration(p) {
-        if (result) return;
-
-        if (p.node.declaration && t.isVariableDeclaration(p.node.declaration)) {
-          const decl = p.node.declaration;
-          for (const declarator of decl.declarations) {
-            if (t.isIdentifier(declarator.id) && declarator.id.name === exportName) {
-              const init = declarator.init;
-              let valueType = null;
-              let isEditable = false;
-
-              if (t.isStringLiteral(init) || t.isNumericLiteral(init)) {
-                valueType = "literal";
-                isEditable = true;
-              } else if (t.isArrayExpression(init)) {
-                valueType = "array";
-                isEditable = true;
-              } else if (t.isObjectExpression(init)) {
-                valueType = "object";
-                isEditable = true;
-              }
-
-              result = {
-                line: declarator.loc?.start.line || null,
-                valueType,
-                isEditable,
-              };
-              return;
-            }
-          }
-        }
-
-        // Check export { VARIABLE }
-        if (p.node.specifiers) {
-          for (const spec of p.node.specifiers) {
-            if (t.isExportSpecifier(spec) &&
-                t.isIdentifier(spec.exported) &&
-                spec.exported.name === exportName) {
-              // Need to find the original declaration
-              const localName = t.isIdentifier(spec.local) ? spec.local.name : exportName;
-              const binding = p.scope.getBinding(localName);
-              if (binding && binding.path.isVariableDeclarator()) {
-                const init = binding.path.node.init;
-                let valueType = null;
-                let isEditable = false;
-
-                if (t.isStringLiteral(init) || t.isNumericLiteral(init)) {
-                  valueType = "literal";
-                  isEditable = true;
-                } else if (t.isArrayExpression(init)) {
-                  valueType = "array";
-                  isEditable = true;
-                } else if (t.isObjectExpression(init)) {
-                  valueType = "object";
-                  isEditable = true;
-                }
-
-                result = {
-                  line: binding.path.node.loc?.start.line || null,
-                  valueType,
-                  isEditable,
-                };
-              }
-              return;
-            }
-          }
-        }
-      },
-    });
-
-    return result;
-  }
-
-  /**
-   * Extracts expression source info from JSX children and builds metadata attributes
-   */
-  function getExpressionSourceAttributes(jsxElement, state) {
-    const attrs = [];
-    const children = jsxElement.children || [];
-
-    for (const child of children) {
-      if (t.isJSXExpressionContainer(child) && !t.isJSXEmptyExpression(child.expression)) {
-        // We found an expression - analyze it
-        // Note: We need to create a path for the expression, but we only have the node
-        // For now, we'll do basic analysis using the scope from the JSX element
-        const expr = child.expression;
-
-        // Basic classification based on node type
-        if (t.isIdentifier(expr)) {
-          attrs.push({ name: "x-expr-var", value: expr.name });
-        } else if (t.isMemberExpression(expr)) {
-          const propPath = buildPropertyPath(expr);
-          attrs.push({ name: "x-expr-path", value: propPath });
-
-          // Get root object name
-          let root = expr;
-          while (t.isMemberExpression(root.object)) {
-            root = root.object;
-          }
-          if (t.isIdentifier(root.object)) {
-            attrs.push({ name: "x-expr-var", value: root.object.name });
-          }
-        }
-
-        // Only process first expression for now
-        break;
-      }
-    }
-
-    return attrs;
-  }
-
-  // ---------- helpers ----------
-  const getName = (openingEl) => {
-    const n = openingEl?.name;
-    return t.isJSXIdentifier(n) ? n.name : null;
-  };
-
-  const hasProp = (openingEl, name) =>
-    openingEl?.attributes?.some(
-      (a) =>
-        t.isJSXAttribute(a) &&
-        t.isJSXIdentifier(a.name) &&
-        a.name.name === name,
-    );
-
-  const isPortalPrimitive = (name) =>
-    /(Trigger|Portal|Content|Overlay|Viewport|Anchor|Arrow)$/.test(name);
-
-  const RADIX_ROOTS = new Set([
-    "Dialog",
-    "Popover",
-    "Tooltip",
-    "DropdownMenu",
-    "ContextMenu",
-    "AlertDialog",
-    "HoverCard",
-    "Select",
-    "Menubar",
-    "NavigationMenu",
-    "Sheet",
-    "Drawer",
-    "Toast",
-    "Command",
-  ]);
-
-  // direct child of a Trigger / asChild / Slot parent?
-  const isDirectChildOfAsChildOrTrigger = (jsxPath) => {
-    const p = jsxPath.parentPath;
-    if (!p || !p.isJSXElement || !p.isJSXElement()) return false;
-    const open = p.node.openingElement;
-    const name = getName(open) || "";
-    return hasProp(open, "asChild") || /Trigger$/.test(name) || name === "Slot";
-  };
-
-  const alreadyHasXMeta = (openingEl) =>
-    openingEl.attributes?.some(
-      (a) =>
-        t.isJSXAttribute(a) &&
-        t.isJSXIdentifier(a.name) &&
-        a.name.name.startsWith("x-"),
-    );
-
-  // ⬇️ Add { markExcluded } option: when true, include x-excluded="true"
-  const insertMetaAttributes = (openingEl, attrsToAdd) => {
-    if (!openingEl.attributes) openingEl.attributes = [];
-    const spreadIndex = openingEl.attributes.findIndex((attr) =>
-      t.isJSXSpreadAttribute(attr),
-    );
-    if (spreadIndex === -1) {
-      openingEl.attributes.push(...attrsToAdd);
-    } else {
-      openingEl.attributes.splice(spreadIndex, 0, ...attrsToAdd);
-    }
-  };
-
-  const pushMetaAttrs = (
-    openingEl,
-    { normalizedPath, lineNumber, elementName, isDynamic, sourceInfo, arrayContext },
-    { markExcluded = false } = {},
-  ) => {
-    if (alreadyHasXMeta(openingEl)) return;
-    const metaAttrs = [
-      t.jsxAttribute(
-        t.jsxIdentifier("x-file-name"),
-        t.stringLiteral(normalizedPath),
-      ),
-      t.jsxAttribute(
-        t.jsxIdentifier("x-line-number"),
-        t.stringLiteral(String(lineNumber)),
-      ),
-      t.jsxAttribute(
-        t.jsxIdentifier("x-component"),
-        t.stringLiteral(elementName),
-      ),
-      t.jsxAttribute(
-        t.jsxIdentifier("x-id"),
-        t.stringLiteral(`${normalizedPath}_${lineNumber}`),
-      ),
-      t.jsxAttribute(
-        t.jsxIdentifier("x-dynamic"),
-        t.stringLiteral(isDynamic ? "true" : "false"),
-      ),
-    ];
-    if (markExcluded) {
-      metaAttrs.push(
-        t.jsxAttribute(t.jsxIdentifier("x-excluded"), t.stringLiteral("true")),
-      );
-    }
-
-    // Add source tracking attributes if available
-    if (sourceInfo) {
-      // x-source-type: static-local | static-imported | prop | state | computed | external
-      if (sourceInfo.type) {
-        metaAttrs.push(
-          t.jsxAttribute(t.jsxIdentifier("x-source-type"), t.stringLiteral(sourceInfo.type))
-        );
-      }
-
-      // x-source-var: the variable name
-      if (sourceInfo.varName) {
-        metaAttrs.push(
-          t.jsxAttribute(t.jsxIdentifier("x-source-var"), t.stringLiteral(sourceInfo.varName))
-        );
-      }
-
-      // x-source-file: for imports, the import path
-      if (sourceInfo.file) {
-        metaAttrs.push(
-          t.jsxAttribute(t.jsxIdentifier("x-source-file"), t.stringLiteral(sourceInfo.file))
-        );
-      }
-
-      // x-source-file-abs: absolute path for relative imports (needed by backend)
-      if (sourceInfo.absFile) {
-        metaAttrs.push(
-          t.jsxAttribute(t.jsxIdentifier("x-source-file-abs"), t.stringLiteral(sourceInfo.absFile))
-        );
-      }
-
-      // x-source-line: line number in source file
-      if (sourceInfo.line) {
-        metaAttrs.push(
-          t.jsxAttribute(t.jsxIdentifier("x-source-line"), t.stringLiteral(String(sourceInfo.line)))
-        );
-      }
-
-      // x-source-path: for object property access (e.g., "name" or "address.city")
-      if (sourceInfo.path) {
-        metaAttrs.push(
-          t.jsxAttribute(t.jsxIdentifier("x-source-path"), t.stringLiteral(sourceInfo.path))
-        );
-      }
-
-      // x-source-editable: whether this dynamic content can be edited
-      metaAttrs.push(
-        t.jsxAttribute(
-          t.jsxIdentifier("x-source-editable"),
-          t.stringLiteral(sourceInfo.isEditable ? "true" : "false")
-        )
-      );
-    }
-
-    // Add array iteration context if available
-    if (arrayContext) {
-      if (arrayContext.arrayVar) {
-        metaAttrs.push(
-          t.jsxAttribute(t.jsxIdentifier("x-array-var"), t.stringLiteral(arrayContext.arrayVar))
-        );
-      }
-      if (arrayContext.arrayFile) {
-        metaAttrs.push(
-          t.jsxAttribute(t.jsxIdentifier("x-array-file"), t.stringLiteral(arrayContext.arrayFile))
-        );
-      }
-      if (arrayContext.arrayLine) {
-        metaAttrs.push(
-          t.jsxAttribute(t.jsxIdentifier("x-array-line"), t.stringLiteral(String(arrayContext.arrayLine)))
-        );
-      }
-      if (arrayContext.itemParam) {
-        metaAttrs.push(
-          t.jsxAttribute(t.jsxIdentifier("x-array-item-param"), t.stringLiteral(arrayContext.itemParam))
-        );
-      }
-    }
-
-    insertMetaAttributes(openingEl, metaAttrs);
-  };
-
-  // Check if a JSX element is inside an array iteration callback
-  function isJSXDynamic(jsxPath) {
-    // Use findParent to reliably check if we're inside a function callback to an array method
-    return !!jsxPath.findParent((path) => {
-      // Look for ArrowFunctionExpression or FunctionExpression
-      if (!path.isArrowFunctionExpression() && !path.isFunctionExpression()) {
-        return false;
-      }
-
-      // Check if parent is a CallExpression with an array method
-      const parentCall = path.parentPath;
-      if (!parentCall || !parentCall.isCallExpression()) {
-        return false;
-      }
-
-      const { callee } = parentCall.node;
-      if (!t.isMemberExpression(callee) || !t.isIdentifier(callee.property)) {
-        return false;
-      }
-
-      return ARRAY_METHODS.has(callee.property.name);
-    });
-  }
-
-  // Check if JSX element has any expressions (data dependencies)
-  function hasAnyExpression(jsxElement) {
-    const openingEl = jsxElement.openingElement;
-    if (openingEl?.attributes?.some((attr) => t.isJSXSpreadAttribute(attr))) {
-      return true;
-    }
-    for (const child of jsxElement.children) {
-      if (
-        t.isJSXExpressionContainer(child) &&
-        !t.isJSXEmptyExpression(child.expression)
-      ) {
-        return true;
-      }
-      if (t.isJSXSpreadChild(child)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  // bring in parser/traverse for dynamic analysis
-  const parser = require("@babel/parser");
-  const traverse = require("@babel/traverse").default;
-
-  function pathHasDynamicJSX(targetPath) {
-    if (!targetPath || !targetPath.node) return false;
-    let dynamic = false;
-    targetPath.traverse({
-      JSXExpressionContainer(p) {
-        if (dynamic) return;
-        if (!t.isJSXEmptyExpression(p.node.expression)) {
-          dynamic = true;
-          p.stop();
-        }
-      },
-      JSXSpreadAttribute(p) {
-        if (dynamic) return;
-        dynamic = true;
-        p.stop();
-      },
-      JSXSpreadChild(p) {
-        if (dynamic) return;
-        dynamic = true;
-        p.stop();
-      },
-    });
-    return dynamic;
-  }
-
-  function pathIsDynamicComponent(path, visited = new WeakSet()) {
-    if (!path || !path.node) return false;
-    if (visited.has(path.node)) return false;
-    visited.add(path.node);
-
-    if (
-      path.isFunctionDeclaration() ||
-      path.isFunctionExpression() ||
-      path.isArrowFunctionExpression()
-    ) {
-      return pathHasDynamicJSX(path);
-    }
-
-    if (path.isVariableDeclarator()) {
-      const init = path.get("init");
-      return init && init.node ? pathIsDynamicComponent(init, visited) : false;
-    }
-
-    if (path.isIdentifier()) {
-      const binding = path.scope.getBinding(path.node.name);
-      if (binding) {
-        return pathIsDynamicComponent(binding.path, visited);
-      }
-      return false;
-    }
-
-    if (path.isCallExpression()) {
-      const args = path.get("arguments") || [];
-      if (args.length === 0) {
-        return true;
-      }
-      for (const arg of args) {
-        if (pathIsDynamicComponent(arg, visited)) {
-          return true;
-        }
-      }
-      return false;
-    }
-
-    if (path.isReturnStatement()) {
-      const argument = path.get("argument");
-      return argument && argument.node
-        ? pathIsDynamicComponent(argument, visited)
-        : false;
-    }
-
-    if (path.isExpressionStatement()) {
-      const expr = path.get("expression");
-      return expr && expr.node ? pathIsDynamicComponent(expr, visited) : false;
-    }
-
-    if (path.isJSXElement() || path.isJSXFragment()) {
-      return pathHasDynamicJSX(path);
-    }
-
-    if (path.isObjectExpression()) {
-      return true;
-    }
-
-    return false;
-  }
-
-  function fileExportIsDynamic({ absPath, exportName }) {
-    if (!absPath) return false;
-    const cacheKey = `${absPath}::${exportName}`;
-    if (DYNAMIC_COMP_CACHE.has(cacheKey)) {
-      return DYNAMIC_COMP_CACHE.get(cacheKey);
-    }
-
-    // Set sentinel value to prevent infinite recursion with circular imports
-    // This will be updated with the actual result at the end
-    DYNAMIC_COMP_CACHE.set(cacheKey, false);
-
-    const ast = parseFileAst(absPath, parser);
-    if (!ast) {
-      DYNAMIC_COMP_CACHE.set(cacheKey, false);
-      return false;
-    }
-
-    let dynamic = false;
-    const visited = new WeakSet();
-
-    function evaluatePath(nodePath) {
-      if (!nodePath || !nodePath.node || dynamic) return;
-      if (visited.has(nodePath.node)) return;
-      visited.add(nodePath.node);
-
-      if (
-        nodePath.isFunctionDeclaration() ||
-        nodePath.isFunctionExpression() ||
-        nodePath.isArrowFunctionExpression()
-      ) {
-        if (pathHasDynamicJSX(nodePath)) {
-          dynamic = true;
-        }
-        return;
-      }
-
-      if (nodePath.isVariableDeclarator()) {
-        evaluatePath(nodePath.get("init"));
-        return;
-      }
-
-      if (nodePath.isIdentifier()) {
-        const binding = nodePath.scope.getBinding(nodePath.node.name);
-        if (binding) {
-          evaluatePath(binding.path);
-        }
-        return;
-      }
-
-      if (nodePath.isCallExpression()) {
-        const args = nodePath.get("arguments") || [];
-        if (args.length === 0) {
-          dynamic = true;
-          return;
-        }
-        for (const arg of args) {
-          evaluatePath(arg);
-          if (dynamic) return;
-        }
-        return;
-      }
-
-      if (nodePath.isReturnStatement()) {
-        evaluatePath(nodePath.get("argument"));
-        return;
-      }
-
-      if (nodePath.isExpressionStatement()) {
-        evaluatePath(nodePath.get("expression"));
-        return;
-      }
-
-      if (nodePath.isJSXElement() || nodePath.isJSXFragment()) {
-        if (pathHasDynamicJSX(nodePath)) {
-          dynamic = true;
-        }
-        return;
-      }
-
-      if (nodePath.isObjectExpression()) {
-        dynamic = true;
-      }
-    }
-
-    traverse(ast, {
-      ExportDefaultDeclaration(p) {
-        if (dynamic || exportName !== "default") return;
-        evaluatePath(p.get("declaration"));
-      },
-      ExportNamedDeclaration(p) {
-        if (dynamic || exportName === "default") return;
-
-        if (p.node.declaration) {
-          const decl = p.node.declaration;
-          if (t.isFunctionDeclaration(decl) && decl.id?.name === exportName) {
-            evaluatePath(p.get("declaration"));
-            return;
-          }
-          if (t.isVariableDeclaration(decl)) {
-            decl.declarations.forEach((vd, i) => {
-              if (t.isIdentifier(vd.id) && vd.id.name === exportName) {
-                evaluatePath(p.get(`declaration.declarations.${i}`));
-              }
-            });
-            return;
-          }
-        }
-
-        p.node.specifiers.forEach((s) => {
-          if (
-            !t.isExportSpecifier(s) ||
-            !t.isIdentifier(s.exported) ||
-            s.exported.name !== exportName
-          ) {
-            return;
+          // Generate updated code
+          const { code } = generate(ast, {
+            retainLines: true,
+            retainFunctionParens: true,
+            comments: true,
+          });
+
+          // Optional: Create backup before writing
+          const backupFile = targetFile + ".backup";
+          if (fs.existsSync(targetFile)) {
+            const originalContent = fs.readFileSync(targetFile, "utf8");
+            fs.writeFileSync(backupFile, originalContent, "utf8");
           }
 
-          if (p.node.source) {
-            const from = p.node.source.value;
-            const resolved = resolveImportPath(from, absPath);
-            if (resolved) {
-              if (
-                fileExportIsDynamic({
-                  absPath: resolved,
-                  exportName: t.isIdentifier(s.local)
-                    ? s.local.name
-                    : exportName,
-                })
-              ) {
-                dynamic = true;
-              }
-            }
-            return;
+          // Write the updated content
+          fs.writeFileSync(targetFile, code, "utf8");
+
+          // Commit changes to git with timestamp
+          const timestamp = Date.now();
+          try {
+            // Use -c flag for per-invocation git config to avoid modifying any config
+            execSync(`git -c user.name="visual-edit" -c user.email="support@emergent.sh" add "${targetFile}"`);
+            execSync(`git -c user.name="visual-edit" -c user.email="support@emergent.sh" commit -m "visual_edit_${timestamp}"`);
+          } catch (gitError) {
+            console.error(`Git commit failed: ${gitError.message}`);
+            // Continue even if git fails - file write succeeded
           }
 
-          if (t.isIdentifier(s.local)) {
-            const binding = p.scope.getBinding(s.local.name);
-            if (binding) {
-              evaluatePath(binding.path);
-            }
+          // Clean up backup file after successful write and commit
+          if (fs.existsSync(backupFile)) {
+            fs.unlinkSync(backupFile);
           }
         });
-      },
+
+        const response = { status: "ok", edits };
+        if (rejectedChanges.length > 0) {
+          response.rejectedChanges = rejectedChanges;
+        }
+        res.json(response);
+      } catch (err) {
+        res.status(500).json({ error: err.message });
+      }
     });
 
-    DYNAMIC_COMP_CACHE.set(cacheKey, dynamic);
-    return dynamic;
-  }
+    // Add OPTIONS handler for CORS preflight
+    devServer.app.options("/edit-file", (req, res) => {
+      const origin = req.get("Origin");
+      if (origin && isAllowedOrigin(origin)) {
+        res.header("Access-Control-Allow-Origin", origin);
+        res.header("Access-Control-Allow-Methods", "POST, OPTIONS");
+        res.header("Access-Control-Allow-Headers", "Content-Type, x-api-key");
+        res.sendStatus(200);
+      } else {
+        res.sendStatus(403);
+      }
+    });
 
-  function componentBindingIsDynamic({ binding, state }) {
-    if (!binding || !binding.path) return false;
-    const bindingPath = binding.path;
-
-    if (BINDING_DYNAMIC_CACHE.has(bindingPath.node)) {
-      return BINDING_DYNAMIC_CACHE.get(bindingPath.node);
-    }
-
-    let result = false;
-
-    if (bindingPath.isImportSpecifier()) {
-      const from = bindingPath.parent.source.value;
-      const fileFrom =
-        state.filename ||
-        state.file?.opts?.filename ||
-        state.file?.sourceFileName ||
-        __filename;
-      const absPath = resolveImportPath(from, fileFrom);
-      const exportName = bindingPath.node.imported.name;
-      result = !!absPath ? fileExportIsDynamic({ absPath, exportName }) : false;
-      BINDING_DYNAMIC_CACHE.set(bindingPath.node, result);
-      return result;
-    }
-
-    if (bindingPath.isImportDefaultSpecifier()) {
-      const from = bindingPath.parent.source.value;
-      const fileFrom =
-        state.filename ||
-        state.file?.opts?.filename ||
-        state.file?.sourceFileName ||
-        __filename;
-      const absPath = resolveImportPath(from, fileFrom);
-      result = !!absPath
-        ? fileExportIsDynamic({ absPath, exportName: "default" })
-        : false;
-      BINDING_DYNAMIC_CACHE.set(bindingPath.node, result);
-      return result;
-    }
-
-    if (bindingPath.isImportNamespaceSpecifier()) {
-      BINDING_DYNAMIC_CACHE.set(bindingPath.node, false);
-      return false;
-    }
-
-    result = pathIsDynamicComponent(bindingPath);
-    BINDING_DYNAMIC_CACHE.set(bindingPath.node, result);
-    return result;
-  }
-
-  return {
-    name: "element-metadata-plugin",
-    visitor: {
-      // Add metadata attributes to React components (capitalized JSX)
-      JSXElement(jsxPath, state) {
-        const openingElement = jsxPath.node.openingElement;
-        if (!openingElement?.name) return;
-        const elementName = getName(openingElement);
-        if (!elementName) return;
-
-        // Only process capitalized components (React components)
-        if (!/^[A-Z]/.test(elementName)) {
-          if (hasProp(openingElement, "data-ve-dynamic") || hasProp(openingElement, "x-excluded")) {
-            return;
-          }
-          wrapDynamicExpressionChildren(jsxPath, t);
-          return;
-        }
-
-        // Exclude components that have strict child requirements or break when wrapped
-        const excludedComponents = new Set([
-          "Route",
-          "Routes",
-          "Switch",
-          "Redirect",
-          "Navigate", // React Router
-          "Fragment",
-          "Suspense",
-          "StrictMode", // React built-ins
-          "ErrorBoundary",
-          "Provider",
-          "Consumer",
-          "Outlet",
-          "Link",
-          "NavLink",
-          // Portal-based primitives/triggers (Radix/Floating-UI)
-          "Sheet",
-          "SheetContent",
-          "SheetOverlay",
-          "SheetPortal",
-          "Popover",
-          "PopoverContent",
-          "Tooltip",
-          "TooltipContent",
-          "DropdownMenu",
-          "DropdownMenuContent",
-          "DropdownMenuSubContent",
-          "ContextMenu",
-          "ContextMenuContent",
-          "ContextMenuSubContent",
-          "HoverCard",
-          "HoverCardContent",
-          "Select",
-          "SelectContent",
-          "Menubar",
-          "MenubarContent",
-          "MenubarSubContent",
-          "MenubarPortal",
-          "Drawer",
-          "DrawerContent",
-          "DrawerOverlay",
-          "DrawerPortal",
-          "Toast",
-          "ToastViewport",
-          "NavigationMenu",
-          "NavigationMenuContent",
-          "DropdownMenuPortal",
-          "ContextMenuPortal",
-          "Command",
-          "CommandDialog",
-          // Triggers & measured bits
-          "PopoverTrigger",
-          "TooltipTrigger",
-          "DropdownMenuTrigger",
-          "ContextMenuTrigger",
-          "HoverCardTrigger",
-          "SelectTrigger",
-          "MenubarTrigger",
-          "NavigationMenuTrigger",
-          "SheetTrigger",
-          "DrawerTrigger",
-          "CommandInput",
-          "Slot",
-          // icons (avoid wrapping)
-          "X",
-          "ChevronRight",
-          "ChevronLeft",
-          "ChevronUp",
-          "ChevronDown",
-          "Check",
-          "Plus",
-          "Minus",
-          "Search",
-          "Menu",
-          "Settings",
-          "User",
-          "Home",
-          "ArrowRight",
-          "ArrowLeft",
-        ]);
-        if (excludedComponents.has(elementName)) return;
-
-        // Check if parent is a component that strictly validates children
-        const parent = jsxPath.parentPath;
-        if (parent?.isJSXElement?.()) {
-          const parentName = getName(parent.node.openingElement) || "";
-          if (
-            [
-              "Routes",
-              "Switch",
-              "BrowserRouter",
-              "Router",
-              "MemoryRouter",
-              "HashRouter",
-            ].includes(parentName) ||
-            RADIX_ROOTS.has(parentName)
-          ) {
-            // Don't wrap if direct child of strict parent (e.g., Route inside Routes, or Radix roots)
-            return;
-          }
-        }
-
-        // Record prop sources for cross-file tracing
-        recordPropSources(elementName, jsxPath, state);
-
-        // Get source location
-        const filename =
-          state.filename ||
-          state.file?.opts?.filename ||
-          state.file?.sourceFileName ||
-          "unknown";
-        const lineNumber = openingElement.loc?.start.line || 0;
-
-        if (!fileNameCache.has(filename)) {
-          const base = path.basename(filename).replace(/\.[jt]sx?$/, "");
-          fileNameCache.set(filename, base);
-        }
-        const normalizedPath = fileNameCache.get(filename) || "unknown";
-
-        // Detect dynamic
-        let isDynamic = isJSXDynamic(jsxPath) || hasAnyExpression(jsxPath.node);
-
-        // Only check component definition if there are NO static text children.
-        // If there ARE text children (like <Label>Habit Name</Label>), their editability
-        // depends on whether they're static strings, not on the component's internal implementation.
-        if (!isDynamic) {
-          const hasStaticTextChildren = jsxPath.node.children.some(
-            (child) => t.isJSXText(child) && child.value.trim()
-          );
-          if (!hasStaticTextChildren) {
-            const binding = jsxPath.scope.getBinding(elementName);
-            if (binding) {
-              isDynamic = componentBindingIsDynamic({ binding, state });
-            }
-          }
-        }
-
-        // Analyze expression sources if element has expressions
-        let sourceInfo = null;
-        let arrayContext = null;
-
-        if (isDynamic) {
-          // Find expression children and analyze them
-          const children = jsxPath.node.children || [];
-          for (let i = 0; i < children.length; i++) {
-            const child = children[i];
-            if (t.isJSXExpressionContainer(child) && !t.isJSXEmptyExpression(child.expression)) {
-              // Get the path to this expression container
-              const exprContainerPath = jsxPath.get(`children.${i}`);
-              if (exprContainerPath && exprContainerPath.node) {
-                const exprPath = exprContainerPath.get("expression");
-                if (exprPath && exprPath.node) {
-                  sourceInfo = analyzeExpression(exprPath, state);
-                  if (sourceInfo && sourceInfo.arrayContext) {
-                    arrayContext = sourceInfo.arrayContext;
-                  }
-                }
-              }
-              break; // Only analyze first expression
-            }
-          }
-
-          // If no expression children, check if we're in array iteration context
-          if (!sourceInfo) {
-            const iterContext = getArrayIterationContext(jsxPath, state);
-            if (iterContext) {
-              arrayContext = iterContext;
-              sourceInfo = {
-                type: iterContext.isEditable ? "static-imported" : "external",
-                varName: iterContext.arrayVar,
-                file: iterContext.arrayFile,
-                absFile: iterContext.absFile,
-                line: iterContext.arrayLine,
-                isEditable: iterContext.isEditable,
-              };
-            }
-          }
-        }
-
-        // Check if parent is a detected composite portal
-        const parentIsCompositePortal = (() => {
-          const p = jsxPath.parentPath;
-          if (!p || !p.isJSXElement || !p.isJSXElement()) return false;
-          const parentName = getName(p.node.openingElement);
-          if (!parentName || !/^[A-Z]/.test(parentName)) return false;
-
-          // Check if parent was detected as composite portal
-          return usageIsCompositePortal({
-            elementName: parentName,
-            jsxPath: p,
-            state,
-            t,
-            traverse,
-            parser,
-            RADIX_ROOTS,
-          });
-        })();
-
-        // 🚫 If this element is a direct child of a Trigger/asChild/Slot,
-        // or itself a primitive/root, DO NOT WRAP — stamp x-* on the element itself
-        // and mark it with x-excluded="true".
-        if (
-          hasProp(openingElement, "asChild") ||
-          isPortalPrimitive(elementName) ||
-          RADIX_ROOTS.has(elementName) ||
-          isDirectChildOfAsChildOrTrigger(jsxPath) ||
-          parentIsCompositePortal
-        ) {
-          pushMetaAttrs(
-            openingElement,
-            { normalizedPath, lineNumber, elementName, isDynamic, sourceInfo, arrayContext },
-            { markExcluded: true },
-          );
-          return;
-        }
-
-        // NEW: dynamic composite detection (e.g., DemoPopover renders Popover primitives)
-        const compositePortal = usageIsCompositePortal({
-          elementName,
-          jsxPath,
-          state,
-          t,
-          traverse,
-          parser,
-          RADIX_ROOTS,
-        });
-
-        if (compositePortal) {
-          // Composite portal: stamp + mark excluded
-          pushMetaAttrs(
-            openingElement,
-            { normalizedPath, lineNumber, elementName, isDynamic, sourceInfo, arrayContext },
-            { markExcluded: true },
-          );
-          return;
-        }
-
-        // ✅ Normal case: add metadata attributes directly
-        pushMetaAttrs(
-          openingElement,
-          { normalizedPath, lineNumber, elementName, isDynamic, sourceInfo, arrayContext },
-        );
-      },
-
-      // Add metadata to native HTML elements (lowercase JSX)
-      JSXOpeningElement(jsxPath, state) {
-        if (!jsxPath.node.name || !jsxPath.node.name.name) {
-          return;
-        }
-
-        const elementName = jsxPath.node.name.name;
-
-        // Skip fragments
-        if (elementName === "Fragment") {
-          return;
-        }
-
-        // Only process lowercase (native HTML)
-        if (/^[A-Z]/.test(elementName)) {
-          return;
-        }
-
-        // Skip if already has metadata
-        const hasDebugAttr = jsxPath.node.attributes.some(
-          (attr) =>
-            t.isJSXAttribute(attr) &&
-            attr.name &&
-            attr.name.name &&
-            attr.name.name.startsWith("x-"),
-        );
-        if (hasDebugAttr) return;
-
-        // Get source location
-        const filename =
-          state.filename ||
-          state.file?.opts?.filename ||
-          state.file?.sourceFileName ||
-          "unknown";
-
-        const lineNumber = jsxPath.node.loc?.start.line || 0;
-
-        if (!fileNameCache.has(filename)) {
-          const base = path.basename(filename).replace(/\.[jt]sx?$/, "");
-          fileNameCache.set(filename, base);
-        }
-        const normalizedPath = fileNameCache.get(filename) || "unknown";
-
-        // Detect if native element is dynamic:
-        // 1. Inside an array iteration (.map(), etc.)
-        // 2. Has expression children (like {variable} or {obj.prop})
-        const parentElement = jsxPath.parentPath; // JSXElement containing this opening element
-        const isInArrayMethod = parentElement ? isJSXDynamic(parentElement) : false;
-        const hasExpressions = parentElement && parentElement.node ? hasAnyExpression(parentElement.node) : false;
-        const isDynamic = isInArrayMethod || hasExpressions;
-
-        // Analyze expression sources if element has expressions
-        let sourceInfo = null;
-        let arrayContext = null;
-
-        if (isDynamic && parentElement && parentElement.node) {
-          // Find expression children and analyze them
-          const children = parentElement.node.children || [];
-          for (let i = 0; i < children.length; i++) {
-            const child = children[i];
-            if (t.isJSXExpressionContainer(child) && !t.isJSXEmptyExpression(child.expression)) {
-              // Get the path to this expression container
-              const exprContainerPath = parentElement.get(`children.${i}`);
-              if (exprContainerPath && exprContainerPath.node) {
-                const exprPath = exprContainerPath.get("expression");
-                if (exprPath && exprPath.node) {
-                  sourceInfo = analyzeExpression(exprPath, state);
-                  if (sourceInfo && sourceInfo.arrayContext) {
-                    arrayContext = sourceInfo.arrayContext;
-                  }
-                }
-              }
-              break; // Only analyze first expression
-            }
-          }
-
-          // If no expression children, check if we're in array iteration context
-          if (!sourceInfo) {
-            const iterContext = getArrayIterationContext(parentElement, state);
-            if (iterContext) {
-              arrayContext = iterContext;
-              sourceInfo = {
-                type: iterContext.isEditable ? "static-imported" : "external",
-                varName: iterContext.arrayVar,
-                file: iterContext.arrayFile,
-                absFile: iterContext.absFile,
-                line: iterContext.arrayLine,
-                isEditable: iterContext.isEditable,
-              };
-            }
-          }
-        }
-
-        // Build metadata attributes
-        const metaAttrs = [
-          t.jsxAttribute(
-            t.jsxIdentifier("x-file-name"),
-            t.stringLiteral(normalizedPath),
-          ),
-          t.jsxAttribute(
-            t.jsxIdentifier("x-line-number"),
-            t.stringLiteral(String(lineNumber)),
-          ),
-          t.jsxAttribute(
-            t.jsxIdentifier("x-component"),
-            t.stringLiteral(elementName),
-          ),
-          t.jsxAttribute(
-            t.jsxIdentifier("x-id"),
-            t.stringLiteral(`${normalizedPath}_${lineNumber}`),
-          ),
-          t.jsxAttribute(
-            t.jsxIdentifier("x-dynamic"),
-            t.stringLiteral(isDynamic ? "true" : "false"),
-          ),
-        ];
-
-        // Add source tracking attributes if available
-        if (sourceInfo) {
-          if (sourceInfo.type) {
-            metaAttrs.push(
-              t.jsxAttribute(t.jsxIdentifier("x-source-type"), t.stringLiteral(sourceInfo.type))
-            );
-          }
-          if (sourceInfo.varName) {
-            metaAttrs.push(
-              t.jsxAttribute(t.jsxIdentifier("x-source-var"), t.stringLiteral(sourceInfo.varName))
-            );
-          }
-          if (sourceInfo.file) {
-            metaAttrs.push(
-              t.jsxAttribute(t.jsxIdentifier("x-source-file"), t.stringLiteral(sourceInfo.file))
-            );
-          }
-          if (sourceInfo.absFile) {
-            metaAttrs.push(
-              t.jsxAttribute(t.jsxIdentifier("x-source-file-abs"), t.stringLiteral(sourceInfo.absFile))
-            );
-          }
-          if (sourceInfo.line) {
-            metaAttrs.push(
-              t.jsxAttribute(t.jsxIdentifier("x-source-line"), t.stringLiteral(String(sourceInfo.line)))
-            );
-          }
-          if (sourceInfo.path) {
-            metaAttrs.push(
-              t.jsxAttribute(t.jsxIdentifier("x-source-path"), t.stringLiteral(sourceInfo.path))
-            );
-          }
-          metaAttrs.push(
-            t.jsxAttribute(
-              t.jsxIdentifier("x-source-editable"),
-              t.stringLiteral(sourceInfo.isEditable ? "true" : "false")
-            )
-          );
-        }
-
-        // Add array iteration context if available
-        if (arrayContext) {
-          if (arrayContext.arrayVar) {
-            metaAttrs.push(
-              t.jsxAttribute(t.jsxIdentifier("x-array-var"), t.stringLiteral(arrayContext.arrayVar))
-            );
-          }
-          if (arrayContext.arrayFile) {
-            metaAttrs.push(
-              t.jsxAttribute(t.jsxIdentifier("x-array-file"), t.stringLiteral(arrayContext.arrayFile))
-            );
-          }
-          if (arrayContext.arrayLine) {
-            metaAttrs.push(
-              t.jsxAttribute(t.jsxIdentifier("x-array-line"), t.stringLiteral(String(arrayContext.arrayLine)))
-            );
-          }
-          if (arrayContext.itemParam) {
-            metaAttrs.push(
-              t.jsxAttribute(t.jsxIdentifier("x-array-item-param"), t.stringLiteral(arrayContext.itemParam))
-            );
-          }
-        }
-
-        // Add metadata attributes
-        insertMetaAttributes(jsxPath.node, metaAttrs);
-      },
-    },
+    return middlewares;
   };
-};
+  return config;
+}
 
-module.exports = babelMetadataPlugin;
+module.exports = setupDevServer;
