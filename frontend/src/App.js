@@ -905,7 +905,7 @@ function App() {
       <div className="w-full max-w-[560px] min-h-screen px-5 pt-4 pb-24">
         {/* App Header */}
         <div className="flex items-center justify-center mb-4">
-          <span className="font-squids text-2xl tracking-widest text-white/90" data-testid="app-title">CRTV</span>
+          <span className="font-squids text-2xl tracking-widest text-white/90" data-testid="app-title">Y$ER</span>
         </div>
         {activeTab === "calculator" ? (
           <>
