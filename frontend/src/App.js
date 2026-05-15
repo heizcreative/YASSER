@@ -44,11 +44,11 @@ const CHECKLIST_ITEMS = {
   pre: {
     title: "NY PRE-MARKET (ICT BIAS)",
     items: [
-      { id: "pre-1", text: "Daily bias", num: 1 },
+      { id: "pre-1", text: "Daily profile", num: 1 },
       { id: "pre-2", text: "High-impact news", num: 2 },
-      { id: "pre-3", text: "Asia + London high/low", num: 3 },
+      { id: "pre-3", text: "Reversal sequence", num: 3 },
       { id: "pre-4", text: "HTF PD arrays", num: 4 },
-      { id: "pre-5", text: "One ICT model only", num: 5 }
+      { id: "pre-5", text: "(TTFM + GXT model only)", num: 5 }
     ]
   },
   kz: {
@@ -420,6 +420,7 @@ const SessionGridCard = ({ session, now }) => {
     </div>
   );
 };
+
 
 const MarketSessions = ({ currentTime, isWeekendMode }) => {
   const [now, setNow] = useState(getETTime());
@@ -905,7 +906,9 @@ function App() {
       <div className="w-full max-w-[560px] min-h-screen px-5 pt-4 pb-24">
         {/* App Header */}
         <div className="flex items-center justify-center mb-4">
-          <span className="font-squids text-2xl tracking-widest text-white/90" data-testid="app-title">Y$ER</span>
+          <span className="font-squids text-2xl tracking-widest text-white/90" data-testid="app-title">
+            Y<span className="text-3xl -mt-1 inline-block">$</span>ER
+          </span>
         </div>
         {activeTab === "calculator" ? (
           <>
