@@ -1,4 +1,4 @@
-# CRTV Trading App
+# Y$ER Trading App
 
 A mobile-first trading tool built with React featuring:
 
