@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 const TIMEZONE = "America/New_York";
 const MINUTE_IN_MS = 60 * 1000;
 const FONT_LOAD_FALLBACK_MS = 1200;
+const CHECKLIST_RESET_HOUR = 20;
 
 // Symbol configuration
 const SYMBOLS = {
@@ -104,8 +105,8 @@ const formatETTime = () => formatInTimeZone(new Date(), TIMEZONE, "HH:mm");
 const getETDateKey = () => formatInTimeZone(new Date(), TIMEZONE, "yyyy-MM-dd");
 const getChecklistDateKey = () => {
   const now = new Date();
-  const etHour = Number(formatInTimeZone(now, TIMEZONE, "H"));
-  if (etHour >= 20) return formatInTimeZone(now, TIMEZONE, "yyyy-MM-dd");
+  const etHour = parseInt(formatInTimeZone(now, TIMEZONE, "H"), 10);
+  if (etHour >= CHECKLIST_RESET_HOUR) return formatInTimeZone(now, TIMEZONE, "yyyy-MM-dd");
 
   const yesterday = subDays(now, 1);
   return formatInTimeZone(yesterday, TIMEZONE, "yyyy-MM-dd");
@@ -758,8 +759,8 @@ const ChecklistTab = ({ currentTime, isWeekendMode }) => {
       const minute = now.getMinutes();
       
       // Check for reset at 8PM (20:00)
-      if (hour === 20 && minute === 0) {
-        const resetKey = `${getETDateKey()}-20`;
+      if (hour === CHECKLIST_RESET_HOUR && minute === 0) {
+        const resetKey = `${getETDateKey()}-${CHECKLIST_RESET_HOUR}`;
         if (lastResetRef.current !== resetKey) {
           lastResetRef.current = resetKey;
           setCheckedItems({});
