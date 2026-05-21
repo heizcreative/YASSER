@@ -556,7 +556,7 @@ const CalculatorTab = ({ symbol, onSymbolChange }) => {
           >
             <Select value={symbol} onValueChange={onSymbolChange}>
               <SelectTrigger 
-                className="h-10 w-[184px] px-4 rounded-[22px] border border-white/10 bg-zinc-900/75 text-white/95 text-base sm:text-sm font-mono backdrop-blur-3xl shadow-2xl shadow-black/60 ring-1 ring-inset ring-white/10 transition-none data-[state=open]:border-white/10 data-[state=open]:bg-zinc-900/75 data-[state=open]:backdrop-blur-3xl data-[state=open]:shadow-2xl data-[state=open]:shadow-black/60 data-[state=open]:ring-white/10"
+                className="h-10 w-[184px] px-4 rounded-[22px] border border-white/10 bg-zinc-900/75 text-white/95 text-base sm:text-sm font-mono backdrop-blur-3xl shadow-2xl shadow-black/60 ring-1 ring-inset ring-white/10 transition-none"
                 data-testid="symbol-selector"
               >
                 <SelectValue />
