@@ -556,7 +556,7 @@ const CalculatorTab = ({ symbol, onSymbolChange }) => {
           >
             <Select value={symbol} onValueChange={onSymbolChange}>
               <SelectTrigger 
-                className="h-9 w-auto px-4 rounded-full border border-white/10 bg-black/70 backdrop-blur-md text-white/90 text-base sm:text-sm font-mono shadow-sm"
+                className="glass-select-trigger px-4 text-white/95 text-base sm:text-sm font-mono ring-1 ring-inset ring-white/10 transition-none"
                 data-testid="symbol-selector"
               >
                 <SelectValue />
@@ -566,13 +566,13 @@ const CalculatorTab = ({ symbol, onSymbolChange }) => {
                 sideOffset={8}
                 side="bottom"
                 align="center"
-                className="z-[100] fixed border border-white/10 bg-black/70 text-white/90 backdrop-blur-md shadow-lg"
+                className="glass-select-content z-[100] fixed text-white/95 ring-1 ring-inset ring-white/10"
               >
                 {Object.keys(SYMBOLS).map((sym) => (
                   <SelectItem 
                     key={sym} 
                     value={sym}
-                    className="text-white/90 focus:bg-white/10 focus:text-white"
+                    className="glass-select-item text-white/90"
                   >
                     {sym} • ${SYMBOLS[sym].valuePerPoint}/{SYMBOLS[sym].unit === "points" ? "pt" : "1.0"}
                   </SelectItem>
