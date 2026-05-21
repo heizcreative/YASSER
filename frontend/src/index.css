@@ -94,7 +94,9 @@ h1, h2, h3, h4, h5, h6, .font-heading {
 .glass-card,
 .glass-input,
 .glass-button,
-.glass-pill {
+.glass-pill,
+.glass-select-trigger,
+.glass-select-content {
     background: rgba(24, 24, 27, 0.75);
     backdrop-filter: blur(40px) saturate(170%);
     -webkit-backdrop-filter: blur(40px) saturate(170%);
@@ -142,19 +144,6 @@ h1, h2, h3, h4, h5, h6, .font-heading {
 }
 
 /* Premium symbol selector glass surface */
-.glass-select-trigger,
-.glass-select-content {
-    background: rgba(24, 24, 27, 0.75);
-    backdrop-filter: blur(40px) saturate(170%);
-    -webkit-backdrop-filter: blur(40px) saturate(170%);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow:
-        0 20px 48px rgba(0, 0, 0, 0.6),
-        inset 0 1px 0 rgba(255, 255, 255, 0.09),
-        inset 0 -1px 0 rgba(0, 0, 0, 0.32);
-    color: rgba(255, 255, 255, 0.95);
-}
-
 .glass-select-trigger {
     height: 2.5rem;
     width: 11.5rem;
