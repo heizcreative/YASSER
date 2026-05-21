@@ -45,7 +45,7 @@
 
 html, body, #root {
     min-height: 100vh;
-    background: #000 !important;
+    background: #0f0f0f !important;
 }
 
 body {
@@ -53,7 +53,7 @@ body {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     color: rgba(255, 255, 255, 0.92);
-    background: #000 !important;
+    background: #0f0f0f !important;
 }
 
 code, .font-mono {
@@ -89,126 +89,84 @@ h1, h2, h3, h4, h5, h6, .font-heading {
     background: rgba(255, 255, 255, 0.2);
 }
 
-/* Premium glassmorphism surfaces */
-.glass-panel,
-.glass-card,
-.glass-input,
-.glass-button,
-.glass-pill,
-.glass-select-trigger,
-.glass-select-content {
-    position: relative;
-    overflow: hidden;
-    background: rgba(0, 0, 0, 0.78);
-    backdrop-filter: blur(56px) saturate(160%);
-    -webkit-backdrop-filter: blur(56px) saturate(160%);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow:
-        0 25px 50px -12px rgba(0, 0, 0, 0.95),
-        0 12px 24px -12px rgba(0, 0, 0, 0.9),
-        inset 0 1px 0 rgba(255, 255, 255, 0.08),
-        inset 0 -1px 0 rgba(0, 0, 0, 0.5);
-}
-
-.glass-panel::before,
-.glass-card::before,
-.glass-input::before,
-.glass-button::before,
-.glass-pill::before,
-.glass-select-trigger::before,
-.glass-select-content::before {
-    content: "";
-    position: absolute;
-    inset: 0 0 auto 0;
-    height: 46%;
-    pointer-events: none;
-    border-radius: inherit;
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.06) 34%, rgba(255, 255, 255, 0) 100%);
-}
-
+/* Apple Liquid Glass panel effect */
 .glass-panel {
-    border-radius: 24px;
+    background: linear-gradient(
+        135deg,
+        rgba(255, 255, 255, 0.03) 0%,
+        rgba(255, 255, 255, 0.01) 50%,
+        rgba(0, 0, 0, 0.02) 100%
+    );
+    backdrop-filter: blur(40px) saturate(180%);
+    -webkit-backdrop-filter: blur(40px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 20px;
+    box-shadow: 
+        0 4px 30px rgba(0, 0, 0, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.05),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.1);
 }
 
+/* Liquid glass for inner cards */
 .glass-card {
-    border-radius: 24px;
+    background: rgba(255, 255, 255, 0.02);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.04);
+    border-radius: 14px;
+    box-shadow: 
+        inset 0 1px 0 rgba(255, 255, 255, 0.03),
+        0 2px 10px rgba(0, 0, 0, 0.2);
 }
 
+/* Liquid glass input */
 .glass-input {
-    border-radius: 18px;
+    background: rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 14px;
+    box-shadow: 
+        inset 0 2px 4px rgba(0, 0, 0, 0.2),
+        inset 0 -1px 0 rgba(255, 255, 255, 0.02);
     transition: all 0.2s ease;
 }
 
 .glass-input:focus {
-    border-color: rgba(77, 159, 255, 0.35);
-    box-shadow:
-        0 20px 48px rgba(0, 0, 0, 0.6),
-        inset 0 1px 0 rgba(255, 255, 255, 0.1),
-        inset 0 -1px 0 rgba(0, 0, 0, 0.32),
-        0 0 22px rgba(77, 159, 255, 0.12);
+    border-color: rgba(77, 159, 255, 0.3);
+    box-shadow: 
+        inset 0 2px 4px rgba(0, 0, 0, 0.2),
+        0 0 20px rgba(77, 159, 255, 0.1);
 }
 
+/* Liquid glass button */
 .glass-button {
-    border-radius: 24px;
+    background: rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    box-shadow: 
+        inset 0 1px 0 rgba(255, 255, 255, 0.04),
+        0 2px 8px rgba(0, 0, 0, 0.15);
     transition: all 0.2s ease;
 }
 
 .glass-button:hover {
-    background: rgba(0, 0, 0, 0.85);
-    border-color: rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.08);
 }
 
+/* Apple Liquid Glass pill (like clock) */
 .glass-pill {
+    background: rgba(255, 255, 255, 0.02);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.04);
     border-radius: 9999px;
-}
-
-/* Premium symbol selector glass surface */
-.glass-select-trigger {
-    min-height: 2.8rem;
-    border-radius: 9999px;
-    padding-block: 0.55rem;
-    box-shadow:
-        0 25px 50px -12px rgba(0, 0, 0, 0.95),
-        0 12px 24px -12px rgba(0, 0, 0, 0.9),
-        inset 0 1px 0 rgba(255, 255, 255, 0.08),
-        inset 0 -1px 0 rgba(0, 0, 0, 0.5);
-}
-
-.glass-select-trigger[data-state="open"] {
-    border-color: rgba(255, 255, 255, 0.14);
-}
-
-.glass-select-trigger > span {
-    flex: 0 1 auto;
-    text-align: center;
-}
-
-.glass-select-trigger svg {
-    color: rgba(255, 255, 255, 0.68);
-}
-
-.glass-select-content {
-    border-radius: 28px;
-    padding: 0.35rem;
-    box-shadow:
-        0 28px 60px -18px rgba(0, 0, 0, 0.95),
-        0 18px 30px -16px rgba(0, 0, 0, 0.9),
-        inset 0 1px 0 rgba(255, 255, 255, 0.08),
-        inset 0 -1px 0 rgba(0, 0, 0, 0.5);
-}
-
-.glass-select-item {
-    border-radius: 9999px;
-    min-height: 2.35rem;
-    padding-inline: 0.85rem 2.2rem;
-    font-size: 0.82rem;
-}
-
-.glass-select-item[data-highlighted],
-.glass-select-item[data-state="checked"] {
-    background: rgba(255, 255, 255, 0.1);
-    color: rgba(255, 255, 255, 1);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    box-shadow: 
+        inset 0 1px 0 rgba(255, 255, 255, 0.03),
+        0 2px 10px rgba(0, 0, 0, 0.2);
 }
 
 /* Session card open state - subtle green glow */

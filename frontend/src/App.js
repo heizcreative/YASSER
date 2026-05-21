@@ -550,28 +550,29 @@ const CalculatorTab = ({ symbol, onSymbolChange }) => {
       <GlassPanel className="py-3">
         <div className="space-y-3">
           {/* Symbol Selector - Centered at top */}
-          <div className="relative z-20 isolate mb-1 flex justify-center overflow-visible" style={{ WebkitTextSizeAdjust: "100%" }}>
+          <div
+            className="relative z-20 isolate flex justify-center mb-1 overflow-visible"
+            style={{ WebkitTextSizeAdjust: "100%" }}
+          >
             <Select value={symbol} onValueChange={onSymbolChange}>
               <SelectTrigger 
-                className="glass-select-trigger !w-auto min-w-[11.5rem] justify-center gap-2 px-5 text-center text-sm font-mono text-white/95 ring-1 ring-inset ring-white/10 transition-none"
+                className="h-9 w-auto px-4 rounded-full border border-white/10 bg-black/70 backdrop-blur-md text-white/90 text-base sm:text-sm font-mono shadow-sm"
                 data-testid="symbol-selector"
               >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent
                 position="popper"
-                sideOffset={10}
+                sideOffset={8}
                 side="bottom"
                 align="center"
-                collisionPadding={16}
-                className="glass-select-content z-[100] w-[var(--radix-select-trigger-width)] min-w-[11.5rem] text-white/95"
-                viewportClassName="w-full min-w-0 p-1.5 h-auto"
+                className="z-[100] fixed border border-white/10 bg-black/70 text-white/90 backdrop-blur-md shadow-lg"
               >
                 {Object.keys(SYMBOLS).map((sym) => (
                   <SelectItem 
                     key={sym} 
                     value={sym}
-                    className="glass-select-item text-white/90"
+                    className="text-white/90 focus:bg-white/10 focus:text-white"
                   >
                     {sym} • ${SYMBOLS[sym].valuePerPoint}/{SYMBOLS[sym].unit === "points" ? "pt" : "1.0"}
                   </SelectItem>
@@ -911,7 +912,7 @@ const ChecklistTab = ({ currentTime, isWeekendMode }) => {
 // Bottom Navigation
 const BottomNav = ({ activeTab, onTabChange }) => (
   <div className="fixed bottom-0 left-0 right-0 flex justify-center z-[9999]" data-testid="bottom-nav">
-    <div className="w-full max-w-[560px] bg-black border-t border-white/[0.06] flex justify-around py-3 px-6">
+    <div className="w-full max-w-[560px] bg-[#0f0f0f] border-t border-white/[0.06] flex justify-around py-3 px-6">
       <button
         onClick={() => onTabChange("calculator")}
         className={`flex flex-col items-center gap-0.5 px-4 py-1.5 rounded-lg transition-colors ${
@@ -1003,7 +1004,7 @@ function App() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-black flex justify-center" data-testid="app-root">
+    <div className="min-h-screen bg-[#0f0f0f] flex justify-center" data-testid="app-root">
       <div className="w-full max-w-[560px] min-h-screen px-5 pt-4 pb-24">
         {/* App Header */}
         <div className="flex items-center justify-center mb-4 min-h-[40px]">
