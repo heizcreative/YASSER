@@ -562,7 +562,6 @@ const CalculatorTab = ({ symbol, onSymbolChange }) => {
                 position="popper"
                 sideOffset={8}
                 side="bottom"
-                align="center"
                 className="glass-select-content z-[100] left-1/2 w-[10.75rem] -translate-x-1/2 text-white/95"
                 viewportClassName="p-1.5 w-full min-w-0 h-auto"
               >
