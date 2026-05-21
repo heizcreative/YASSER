@@ -102,6 +102,15 @@ const getSafeSymbol = (value) => (typeof value === "string" && SYMBOLS[value] ? 
 const getETTime = () => toZonedTime(new Date(), TIMEZONE);
 const formatETTime = () => formatInTimeZone(new Date(), TIMEZONE, "HH:mm");
 const getETDateKey = () => formatInTimeZone(new Date(), TIMEZONE, "yyyy-MM-dd");
+const getChecklistDateKey = () => {
+  const now = new Date();
+  const etHour = Number(formatInTimeZone(now, TIMEZONE, "H"));
+  if (etHour >= 20) return formatInTimeZone(now, TIMEZONE, "yyyy-MM-dd");
+
+  const yesterday = new Date(now);
+  yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+  return formatInTimeZone(yesterday, TIMEZONE, "yyyy-MM-dd");
+};
 
 // Weekend market closure: Friday 5PM ET → Sunday 6PM ET
 const isMarketClosed = (etDate) => {
@@ -733,8 +742,8 @@ const ChecklistTab = ({ currentTime, isWeekendMode }) => {
   const [activeSession, setActiveSession] = useState(() => getCurrentChecklistSession());
   const [checkedItems, setCheckedItems] = useState(() => {
     const data = getSafeStoredObject(STORAGE_KEYS.CHECKLIST);
-    const todayKey = getETDateKey();
-    if (data.dateKey === todayKey) {
+    const checklistDateKey = getChecklistDateKey();
+    if (data.dateKey === checklistDateKey) {
       return data.items || {};
     }
     return {};
@@ -756,7 +765,7 @@ const ChecklistTab = ({ currentTime, isWeekendMode }) => {
           lastResetRef.current = resetKey;
           setCheckedItems({});
           localStorage.setItem(STORAGE_KEYS.CHECKLIST, JSON.stringify({
-            dateKey: getETDateKey(),
+            dateKey: getChecklistDateKey(),
             items: {}
           }));
         }
@@ -771,7 +780,7 @@ const ChecklistTab = ({ currentTime, isWeekendMode }) => {
   // Save to localStorage
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.CHECKLIST, JSON.stringify({
-      dateKey: getETDateKey(),
+      dateKey: getChecklistDateKey(),
       items: checkedItems
     }));
   }, [checkedItems]);
