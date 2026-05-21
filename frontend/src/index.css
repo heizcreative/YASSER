@@ -141,6 +141,40 @@ h1, h2, h3, h4, h5, h6, .font-heading {
     border-radius: 9999px;
 }
 
+/* Premium symbol selector glass surface */
+.glass-select-trigger,
+.glass-select-content {
+    background: rgba(24, 24, 27, 0.75);
+    backdrop-filter: blur(40px) saturate(170%);
+    -webkit-backdrop-filter: blur(40px) saturate(170%);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow:
+        0 20px 48px rgba(0, 0, 0, 0.6),
+        inset 0 1px 0 rgba(255, 255, 255, 0.09),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.32);
+    color: rgba(255, 255, 255, 0.95);
+}
+
+.glass-select-trigger {
+    height: 2.5rem;
+    width: 11.5rem;
+    border-radius: 22px;
+}
+
+.glass-select-content {
+    border-radius: 22px;
+}
+
+.glass-select-item {
+    border-radius: 1rem;
+}
+
+.glass-select-item[data-highlighted],
+.glass-select-item[data-state="checked"] {
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 1);
+}
+
 /* Session card open state - subtle green glow */
 .session-card-open {
     border-color: rgba(40, 230, 165, 0.15);
