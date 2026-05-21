@@ -559,10 +559,8 @@ const CalculatorTab = ({ symbol, onSymbolChange }) => {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent
-                position="popper"
-                sideOffset={8}
-                side="bottom"
-                className="glass-select-content z-[100] left-1/2 w-[10.75rem] -translate-x-1/2 text-white/95"
+                position="item-aligned"
+                className="glass-select-content absolute z-[100] left-1/2 w-[10.75rem] -translate-x-1/2 text-white/95"
                 viewportClassName="p-1.5 w-full min-w-0 h-auto"
               >
                 {Object.keys(SYMBOLS).map((sym) => (
