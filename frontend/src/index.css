@@ -164,27 +164,51 @@ h1, h2, h3, h4, h5, h6, .font-heading {
 
 /* Premium symbol selector glass surface */
 .glass-select-trigger {
-    height: 2.4rem;
-    width: 11rem;
-    border-radius: 24px;
+    min-height: 2.8rem;
+    border-radius: 9999px;
+    padding-block: 0.55rem;
+    box-shadow:
+        0 25px 50px -12px rgba(0, 0, 0, 0.95),
+        0 12px 24px -12px rgba(0, 0, 0, 0.9),
+        inset 0 1px 0 rgba(255, 255, 255, 0.08),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.5);
+}
+
+.glass-select-trigger[data-state="open"] {
+    border-color: rgba(255, 255, 255, 0.14);
+}
+
+.glass-select-trigger > span {
+    flex: 0 1 auto;
+    text-align: center;
+}
+
+.glass-select-trigger svg {
+    color: rgba(255, 255, 255, 0.68);
 }
 
 .glass-select-content {
-    border-radius: 24px;
+    border-radius: 28px;
     padding: 0.35rem;
+    box-shadow:
+        0 28px 60px -18px rgba(0, 0, 0, 0.95),
+        0 18px 30px -16px rgba(0, 0, 0, 0.9),
+        inset 0 1px 0 rgba(255, 255, 255, 0.08),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.5);
 }
 
 .glass-select-item {
-    border-radius: 14px;
-    min-height: 2rem;
-    padding-inline: 0.65rem 1.95rem;
-    font-size: 0.78rem;
+    border-radius: 9999px;
+    min-height: 2.35rem;
+    padding-inline: 0.85rem 2.2rem;
+    font-size: 0.82rem;
 }
 
 .glass-select-item[data-highlighted],
 .glass-select-item[data-state="checked"] {
     background: rgba(255, 255, 255, 0.1);
     color: rgba(255, 255, 255, 1);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 /* Session card open state - subtle green glow */
