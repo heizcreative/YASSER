@@ -370,6 +370,11 @@ const getCurrentChecklistSession = () => {
   return "lock";
 };
 
+const getMillisecondsToNextMinute = () => {
+  const now = getETTime();
+  return (60 - now.getSeconds()) * 1000 - now.getMilliseconds();
+};
+
 const formatTimeSimple = (hour) => {
   const h = Math.floor(hour);
   const m = Math.round((hour - h) * 60);
@@ -711,6 +716,8 @@ const ChecklistTab = ({ currentTime, isWeekendMode }) => {
     return {};
   });
   const lastResetRef = useRef(null);
+  const lastAutoSessionRef = useRef(getCurrentChecklistSession());
+  const autoSwitchIntervalRef = useRef(null);
 
   // Reset logic at 8PM - but don't auto-switch tabs
   useEffect(() => {
@@ -745,6 +752,34 @@ const ChecklistTab = ({ currentTime, isWeekendMode }) => {
       items: checkedItems
     }));
   }, [checkedItems]);
+
+  // Live auto-session switching every minute (manual selection remains usable within the current session window)
+  useEffect(() => {
+    if (isWeekendMode) return;
+
+    const syncSession = () => {
+      const liveSession = getCurrentChecklistSession();
+      if (lastAutoSessionRef.current !== liveSession) {
+        lastAutoSessionRef.current = liveSession;
+        setActiveSession(liveSession);
+      }
+    };
+
+    syncSession();
+    const alignTimeout = setTimeout(() => {
+      syncSession();
+      const interval = setInterval(syncSession, 60 * 1000);
+      autoSwitchIntervalRef.current = interval;
+    }, getMillisecondsToNextMinute());
+
+    return () => {
+      clearTimeout(alignTimeout);
+      if (autoSwitchIntervalRef.current) {
+        clearInterval(autoSwitchIntervalRef.current);
+        autoSwitchIntervalRef.current = null;
+      }
+    };
+  }, [isWeekendMode]);
 
   const toggleItem = useCallback((itemId) => {
     setCheckedItems(prev => ({
@@ -820,29 +855,31 @@ const ChecklistTab = ({ currentTime, isWeekendMode }) => {
       </div>
 
       {/* Active Checklist */}
-      <GlassPanel>
-        <div className="mb-4">
-          <h3 className="text-sm font-heading font-semibold text-white/90 uppercase tracking-wider">
-            {CHECKLIST_ITEMS[activeSession].title}
-          </h3>
-          {CHECKLIST_ITEMS[activeSession].subtitle && (
-            <p className="text-xs text-white/50 font-mono mt-1">
-              {CHECKLIST_ITEMS[activeSession].subtitle}
-            </p>
-          )}
-        </div>
-        <div className="space-y-3">
-          {CHECKLIST_ITEMS[activeSession].items.map((item) => (
-            <ChecklistItem
-              key={item.id}
-              item={item}
-              checked={!!checkedItems[item.id]}
-              onToggle={() => toggleItem(item.id)}
-              sessionColor={CHECKLIST_SESSIONS[activeSession].color}
-            />
-          ))}
-        </div>
-      </GlassPanel>
+      <div key={activeSession} className="animate-in fade-in zoom-in-95 duration-300 ease-out">
+        <GlassPanel>
+          <div className="mb-4">
+            <h3 className="text-sm font-heading font-semibold text-white/90 uppercase tracking-wider">
+              {CHECKLIST_ITEMS[activeSession].title}
+            </h3>
+            {CHECKLIST_ITEMS[activeSession].subtitle && (
+              <p className="text-xs text-white/50 font-mono mt-1">
+                {CHECKLIST_ITEMS[activeSession].subtitle}
+              </p>
+            )}
+          </div>
+          <div className="space-y-3">
+            {CHECKLIST_ITEMS[activeSession].items.map((item) => (
+              <ChecklistItem
+                key={item.id}
+                item={item}
+                checked={!!checkedItems[item.id]}
+                onToggle={() => toggleItem(item.id)}
+                sessionColor={CHECKLIST_SESSIONS[activeSession].color}
+              />
+            ))}
+          </div>
+        </GlassPanel>
+      </div>
     </div>
   );
 };
@@ -885,6 +922,7 @@ function App() {
   const [symbol, setSymbol] = useState(() => localStorage.getItem(STORAGE_KEYS.SYMBOL) || "MNQ");
   const [currentTime, setCurrentTime] = useState(formatETTime());
   const [isWeekendMode, setIsWeekendMode] = useState(isWeekend());
+  const [isSquidsFontReady, setIsSquidsFontReady] = useState(false);
 
   // Update time every second
   useEffect(() => {
@@ -903,12 +941,44 @@ function App() {
     localStorage.setItem(STORAGE_KEYS.SYMBOL, symbol);
   }, [symbol]);
 
+  // Avoid thin->bold header flash: wait for Anton to be ready, then reveal title
+  useEffect(() => {
+    let mounted = true;
+    const fallbackTimer = setTimeout(() => {
+      if (mounted) setIsSquidsFontReady(true);
+    }, 1500);
+
+    const prepareFont = async () => {
+      try {
+        if (document.fonts?.load) {
+          await document.fonts.load("400 28px Anton");
+        }
+      } catch {
+        // Fallback timer handles reveal if font loading API fails
+      } finally {
+        if (mounted) setIsSquidsFontReady(true);
+        clearTimeout(fallbackTimer);
+      }
+    };
+
+    prepareFont();
+    return () => {
+      mounted = false;
+      clearTimeout(fallbackTimer);
+    };
+  }, []);
+
   return (
     <div className="min-h-screen bg-[#0f0f0f] flex justify-center" data-testid="app-root">
       <div className="w-full max-w-[560px] min-h-screen px-5 pt-4 pb-24">
         {/* App Header */}
-        <div className="flex items-center justify-center mb-4">
-          <span className="font-squids text-2xl tracking-widest text-white/90" data-testid="app-title">
+        <div className="flex items-center justify-center mb-4 min-h-[40px]">
+          <span
+            className={`font-squids font-bold text-2xl tracking-widest leading-none text-white/90 inline-flex items-center justify-center transition-opacity duration-200 ${
+              isSquidsFontReady ? "opacity-100" : "opacity-0"
+            }`}
+            data-testid="app-title"
+          >
             Y<span className="text-3xl -mt-1 inline-block">$</span>ER
           </span>
         </div>
