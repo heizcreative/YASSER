@@ -974,7 +974,7 @@ function App() {
         {/* App Header */}
         <div className="flex items-center justify-center mb-4 min-h-[40px]">
           <span
-            className={`font-squids font-bold text-2xl tracking-widest leading-none text-white/90 inline-flex items-center justify-center transition-opacity duration-200 ${
+            className={`font-squids text-2xl tracking-widest leading-none text-white/90 inline-flex items-center justify-center transition-opacity duration-200 ${
               isSquidsFontReady ? "opacity-100" : "opacity-0"
             }`}
             data-testid="app-title"
