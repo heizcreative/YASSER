@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 const TIMEZONE = "America/Toronto";
 const MINUTE_IN_MS = 60 * 1000;
+const FONT_LOAD_FALLBACK_MS = 1200;
 
 // Symbol configuration
 const SYMBOLS = {
@@ -95,7 +96,7 @@ const getSafeStoredObject = (storageKey, fallback = {}) => {
   }
 };
 
-const getSafeSymbol = (value) => (value && SYMBOLS[value] ? value : DEFAULT_SYMBOL);
+const getSafeSymbol = (value) => (typeof value === "string" && SYMBOLS[value] ? value : DEFAULT_SYMBOL);
 
 // Helper functions
 const getETTime = () => toZonedTime(new Date(), TIMEZONE);
@@ -960,16 +961,17 @@ function App() {
     let mounted = true;
     const fallbackTimer = setTimeout(() => {
       if (mounted) setIsSquidsFontReady(true);
-    }, 2500);
+    }, FONT_LOAD_FALLBACK_MS);
 
     const prepareFont = async () => {
       try {
-        if (document.fonts?.load && document.fonts?.ready) {
-          await Promise.all([
+        if (document.fonts?.load) {
+          const fontLoads = [
             document.fonts.load("400 24px Anton"),
             document.fonts.load("400 30px Anton"),
             document.fonts.ready
-          ]);
+          ];
+          await Promise.all(fontLoads);
         }
       } catch {
         // Fallback timer handles reveal if font loading API fails
@@ -998,10 +1000,7 @@ function App() {
         <div className="flex items-center justify-center mb-4 min-h-[40px]">
           <span
             className="font-squids text-2xl tracking-widest leading-none text-white/90 inline-flex items-center justify-center"
-            style={{
-              opacity: isSquidsFontReady ? 1 : 0,
-              visibility: isSquidsFontReady ? "visible" : "hidden"
-            }}
+            style={{ opacity: isSquidsFontReady ? 1 : 0 }}
             data-testid="app-title"
           >
             Y<span className="text-3xl -mt-1 inline-block">$</span>ER
