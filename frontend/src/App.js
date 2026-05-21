@@ -5,7 +5,7 @@ import { toZonedTime, formatInTimeZone } from "date-fns-tz";
 import { Calculator, ClipboardCheck, Check } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-const TIMEZONE = "America/Toronto";
+const TIMEZONE = "America/New_York";
 const MINUTE_IN_MS = 60 * 1000;
 const FONT_LOAD_FALLBACK_MS = 1200;
 
@@ -49,7 +49,7 @@ const CHECKLIST_ITEMS = {
       { id: "pre-1", text: "HTF expansion", num: 1 },
       { id: "pre-2", text: "Key level hit", num: 2 },
       { id: "pre-3", text: "HOD/LOD context", num: 3 },
-      { id: "pre-4", text: "Session setup (Asia range + London sweep)", num: 4 },
+      { id: "pre-4", text: "Reversal formation", num: 4 },
       { id: "pre-5", text: "Model present (IRL / ERL / HRLR)", num: 5 },
       { id: "pre-6", text: "Targets clear", num: 6 }
     ]
@@ -736,7 +736,6 @@ const ChecklistTab = ({ currentTime, isWeekendMode }) => {
   });
   const lastResetRef = useRef(null);
   const lastAutoSessionRef = useRef(getCurrentChecklistSession());
-  const autoSwitchIntervalRef = useRef(null);
 
   // Reset logic at 8PM - but don't auto-switch tabs
   useEffect(() => {
@@ -772,7 +771,8 @@ const ChecklistTab = ({ currentTime, isWeekendMode }) => {
     }));
   }, [checkedItems]);
 
-  // Live auto-session switching every minute (manual selection remains usable within the current session window)
+  // Live minute-aligned auto-session switching (ET): Lock → Pre → KZ → Post.
+  // Manual tab clicks stay fully usable until the next actual session boundary.
   useEffect(() => {
     if (isWeekendMode) return;
 
@@ -787,16 +787,14 @@ const ChecklistTab = ({ currentTime, isWeekendMode }) => {
     syncSession();
     const alignTimeout = setTimeout(() => {
       syncSession();
-      const interval = setInterval(syncSession, MINUTE_IN_MS);
-      autoSwitchIntervalRef.current = interval;
+      const minuteInterval = setInterval(syncSession, MINUTE_IN_MS);
+      cleanupInterval = () => clearInterval(minuteInterval);
     }, getMillisecondsToNextMinute());
+    let cleanupInterval = null;
 
     return () => {
       clearTimeout(alignTimeout);
-      if (autoSwitchIntervalRef.current) {
-        clearInterval(autoSwitchIntervalRef.current);
-        autoSwitchIntervalRef.current = null;
-      }
+      if (cleanupInterval) cleanupInterval();
     };
   }, [isWeekendMode]);
 
@@ -874,7 +872,10 @@ const ChecklistTab = ({ currentTime, isWeekendMode }) => {
       </div>
 
       {/* Active Checklist */}
-      <div key={activeSession} className="animate-in fade-in zoom-in-95 duration-300 ease-out">
+      <div
+        key={activeSession}
+        className="animate-in fade-in zoom-in-95 duration-300 ease-in-out transform-gpu will-change-transform will-change-opacity"
+      >
         <GlassPanel>
           <div className="mb-4">
             <h3 className="text-sm font-heading font-semibold text-white/90 uppercase tracking-wider">
