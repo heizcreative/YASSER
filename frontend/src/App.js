@@ -784,13 +784,13 @@ const ChecklistTab = ({ currentTime, isWeekendMode }) => {
       }
     };
 
+    let cleanupInterval = null;
     syncSession();
     const alignTimeout = setTimeout(() => {
       syncSession();
       const minuteInterval = setInterval(syncSession, MINUTE_IN_MS);
       cleanupInterval = () => clearInterval(minuteInterval);
     }, getMillisecondsToNextMinute());
-    let cleanupInterval = null;
 
     return () => {
       clearTimeout(alignTimeout);
@@ -874,7 +874,7 @@ const ChecklistTab = ({ currentTime, isWeekendMode }) => {
       {/* Active Checklist */}
       <div
         key={activeSession}
-        className="animate-in fade-in zoom-in-95 duration-300 ease-in-out transform-gpu will-change-transform will-change-opacity"
+        className="animate-in fade-in zoom-in-95 duration-300 ease-in-out transform-gpu"
       >
         <GlassPanel>
           <div className="mb-4">
