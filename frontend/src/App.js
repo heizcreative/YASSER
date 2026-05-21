@@ -556,17 +556,17 @@ const CalculatorTab = ({ symbol, onSymbolChange }) => {
           >
             <Select value={symbol} onValueChange={onSymbolChange}>
               <SelectTrigger 
-                className="glass-select-trigger px-4 text-white/95 text-base sm:text-sm font-mono ring-1 ring-inset ring-white/10 transition-none"
+                className="glass-select-trigger px-3 text-white/95 text-sm font-mono ring-1 ring-inset ring-white/10 transition-none"
                 data-testid="symbol-selector"
               >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent
                 position="popper"
-                sideOffset={8}
+                sideOffset={10}
                 side="bottom"
                 align="center"
-                className="glass-select-content z-[100] fixed text-white/95 ring-1 ring-inset ring-white/10"
+                className="glass-select-content z-[100] text-white/95 ring-1 ring-inset ring-white/10"
               >
                 {Object.keys(SYMBOLS).map((sym) => (
                   <SelectItem 
@@ -1004,7 +1004,7 @@ function App() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#0f0f0f] flex justify-center" data-testid="app-root">
+    <div className="min-h-screen bg-black flex justify-center" data-testid="app-root">
       <div className="w-full max-w-[560px] min-h-screen px-5 pt-4 pb-24">
         {/* App Header */}
         <div className="flex items-center justify-center mb-4 min-h-[40px]">
