@@ -550,10 +550,13 @@ const CalculatorTab = ({ symbol, onSymbolChange }) => {
       <GlassPanel className="py-3">
         <div className="space-y-3">
           {/* Symbol Selector - Centered at top */}
-          <div className="relative z-20 flex justify-center mb-1 overflow-visible">
+          <div
+            className="relative z-20 isolate flex justify-center mb-1 overflow-visible"
+            style={{ WebkitTextSizeAdjust: "100%" }}
+          >
             <Select value={symbol} onValueChange={onSymbolChange}>
               <SelectTrigger 
-                className="h-9 w-auto px-4 glass-card text-white/90 text-sm font-mono rounded-full border-0"
+                className="h-9 w-auto px-4 rounded-full border border-white/10 bg-black/70 backdrop-blur-md text-white/90 text-base sm:text-sm font-mono shadow-sm"
                 data-testid="symbol-selector"
               >
                 <SelectValue />
@@ -561,7 +564,9 @@ const CalculatorTab = ({ symbol, onSymbolChange }) => {
               <SelectContent
                 position="popper"
                 sideOffset={8}
-                className="z-[100] glass-card border-white/10 bg-white/[0.05] text-white/90 backdrop-blur-xl"
+                side="bottom"
+                align="center"
+                className="z-[100] fixed border border-white/10 bg-black/70 text-white/90 backdrop-blur-md shadow-lg"
               >
                 {Object.keys(SYMBOLS).map((sym) => (
                   <SelectItem 
