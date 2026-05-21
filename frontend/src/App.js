@@ -566,7 +566,8 @@ const CalculatorTab = ({ symbol, onSymbolChange }) => {
                 sideOffset={8}
                 side="bottom"
                 align="center"
-                className="glass-select-content z-[100] fixed text-white/95 ring-1 ring-inset ring-white/10"
+                className="glass-select-content z-[100] w-[10rem] text-white/95"
+                viewportClassName="p-1.5 w-full min-w-0 h-auto"
               >
                 {Object.keys(SYMBOLS).map((sym) => (
                   <SelectItem 
@@ -912,7 +913,7 @@ const ChecklistTab = ({ currentTime, isWeekendMode }) => {
 // Bottom Navigation
 const BottomNav = ({ activeTab, onTabChange }) => (
   <div className="fixed bottom-0 left-0 right-0 flex justify-center z-[9999]" data-testid="bottom-nav">
-    <div className="w-full max-w-[560px] bg-[#0f0f0f] border-t border-white/[0.06] flex justify-around py-3 px-6">
+    <div className="w-full max-w-[560px] bg-black border-t border-white/[0.06] flex justify-around py-3 px-6">
       <button
         onClick={() => onTabChange("calculator")}
         className={`flex flex-col items-center gap-0.5 px-4 py-1.5 rounded-lg transition-colors ${
@@ -1004,7 +1005,7 @@ function App() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#0f0f0f] flex justify-center" data-testid="app-root">
+    <div className="min-h-screen bg-black flex justify-center" data-testid="app-root">
       <div className="w-full max-w-[560px] min-h-screen px-5 pt-4 pb-24">
         {/* App Header */}
         <div className="flex items-center justify-center mb-4 min-h-[40px]">
