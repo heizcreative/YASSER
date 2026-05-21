@@ -5,7 +5,7 @@ import { toZonedTime, formatInTimeZone } from "date-fns-tz";
 import { Calculator, ClipboardCheck, Check } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-const TIMEZONE = "America/Toronto";
+const TIMEZONE = "America/New_York";
 const MINUTE_IN_MS = 60 * 1000;
 const FONT_LOAD_FALLBACK_MS = 1200;
 
@@ -49,7 +49,7 @@ const CHECKLIST_ITEMS = {
       { id: "pre-1", text: "HTF expansion", num: 1 },
       { id: "pre-2", text: "Key level hit", num: 2 },
       { id: "pre-3", text: "HOD/LOD context", num: 3 },
-      { id: "pre-4", text: "Session setup (Asia range + London sweep)", num: 4 },
+      { id: "pre-4", text: "Reversal formation", num: 4 },
       { id: "pre-5", text: "Model present (IRL / ERL / HRLR)", num: 5 },
       { id: "pre-6", text: "Targets clear", num: 6 }
     ]
@@ -550,10 +550,13 @@ const CalculatorTab = ({ symbol, onSymbolChange }) => {
       <GlassPanel className="py-3">
         <div className="space-y-3">
           {/* Symbol Selector - Centered at top */}
-          <div className="relative z-20 flex justify-center mb-1 overflow-visible">
+          <div
+            className="relative z-20 isolate flex justify-center mb-1 overflow-visible"
+            style={{ WebkitTextSizeAdjust: "100%" }}
+          >
             <Select value={symbol} onValueChange={onSymbolChange}>
               <SelectTrigger 
-                className="h-9 w-auto px-4 glass-card text-white/90 text-sm font-mono rounded-full border-0"
+                className="h-9 w-auto px-4 rounded-full border border-white/10 bg-black/70 backdrop-blur-md text-white/90 text-base sm:text-sm font-mono shadow-sm"
                 data-testid="symbol-selector"
               >
                 <SelectValue />
@@ -561,7 +564,9 @@ const CalculatorTab = ({ symbol, onSymbolChange }) => {
               <SelectContent
                 position="popper"
                 sideOffset={8}
-                className="z-[100] glass-card border-white/10 bg-white/[0.05] text-white/90 backdrop-blur-xl"
+                side="bottom"
+                align="center"
+                className="z-[100] fixed border border-white/10 bg-black/70 text-white/90 backdrop-blur-md shadow-lg"
               >
                 {Object.keys(SYMBOLS).map((sym) => (
                   <SelectItem 
@@ -736,7 +741,6 @@ const ChecklistTab = ({ currentTime, isWeekendMode }) => {
   });
   const lastResetRef = useRef(null);
   const lastAutoSessionRef = useRef(getCurrentChecklistSession());
-  const autoSwitchIntervalRef = useRef(null);
 
   // Reset logic at 8PM - but don't auto-switch tabs
   useEffect(() => {
@@ -772,7 +776,8 @@ const ChecklistTab = ({ currentTime, isWeekendMode }) => {
     }));
   }, [checkedItems]);
 
-  // Live auto-session switching every minute (manual selection remains usable within the current session window)
+  // Live minute-aligned auto-session switching (ET): Lock → Pre → KZ → Post.
+  // Manual tab clicks stay fully usable until the next actual session boundary.
   useEffect(() => {
     if (isWeekendMode) return;
 
@@ -784,19 +789,17 @@ const ChecklistTab = ({ currentTime, isWeekendMode }) => {
       }
     };
 
+    let cleanupInterval = null;
     syncSession();
     const alignTimeout = setTimeout(() => {
       syncSession();
-      const interval = setInterval(syncSession, MINUTE_IN_MS);
-      autoSwitchIntervalRef.current = interval;
+      const minuteInterval = setInterval(syncSession, MINUTE_IN_MS);
+      cleanupInterval = () => clearInterval(minuteInterval);
     }, getMillisecondsToNextMinute());
 
     return () => {
       clearTimeout(alignTimeout);
-      if (autoSwitchIntervalRef.current) {
-        clearInterval(autoSwitchIntervalRef.current);
-        autoSwitchIntervalRef.current = null;
-      }
+      if (cleanupInterval) cleanupInterval();
     };
   }, [isWeekendMode]);
 
@@ -874,7 +877,10 @@ const ChecklistTab = ({ currentTime, isWeekendMode }) => {
       </div>
 
       {/* Active Checklist */}
-      <div key={activeSession} className="animate-in fade-in zoom-in-95 duration-300 ease-out">
+      <div
+        key={activeSession}
+        className="animate-in fade-in zoom-in-95 duration-300 ease-in-out transform-gpu"
+      >
         <GlassPanel>
           <div className="mb-4">
             <h3 className="text-sm font-heading font-semibold text-white/90 uppercase tracking-wider">
