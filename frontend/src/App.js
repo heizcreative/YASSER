@@ -556,7 +556,7 @@ const CalculatorTab = ({ symbol, onSymbolChange }) => {
           >
             <Select value={symbol} onValueChange={onSymbolChange}>
               <SelectTrigger 
-                className="h-9 w-auto px-4 rounded-full border border-white/10 bg-black/70 backdrop-blur-md text-white/90 text-base sm:text-sm font-mono shadow-sm"
+                className="h-10 w-[184px] px-4 rounded-[22px] border border-white/10 bg-zinc-900/75 text-white/95 text-base sm:text-sm font-mono backdrop-blur-3xl shadow-2xl shadow-black/60 ring-1 ring-inset ring-white/10 transition-none data-[state=open]:border-white/10 data-[state=open]:bg-zinc-900/75 data-[state=open]:backdrop-blur-3xl data-[state=open]:shadow-2xl data-[state=open]:shadow-black/60 data-[state=open]:ring-white/10"
                 data-testid="symbol-selector"
               >
                 <SelectValue />
@@ -566,13 +566,13 @@ const CalculatorTab = ({ symbol, onSymbolChange }) => {
                 sideOffset={8}
                 side="bottom"
                 align="center"
-                className="z-[100] fixed border border-white/10 bg-black/70 text-white/90 backdrop-blur-md shadow-lg"
+                className="z-[100] fixed rounded-[22px] border border-white/10 bg-zinc-900/75 text-white/95 backdrop-blur-3xl shadow-2xl shadow-black/60 ring-1 ring-inset ring-white/10"
               >
                 {Object.keys(SYMBOLS).map((sym) => (
                   <SelectItem 
                     key={sym} 
                     value={sym}
-                    className="text-white/90 focus:bg-white/10 focus:text-white"
+                    className="rounded-2xl text-white/90 focus:bg-white/10 focus:text-white data-[state=checked]:bg-white/10 data-[state=checked]:text-white"
                   >
                     {sym} • ${SYMBOLS[sym].valuePerPoint}/{SYMBOLS[sym].unit === "points" ? "pt" : "1.0"}
                   </SelectItem>
