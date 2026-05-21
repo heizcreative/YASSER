@@ -81,6 +81,22 @@ const STORAGE_KEYS = {
   CHECKLIST: "crtv_checklist"
 };
 
+const DEFAULT_SYMBOL = "MNQ";
+
+const getSafeStoredObject = (storageKey, fallback = {}) => {
+  const saved = localStorage.getItem(storageKey);
+  if (!saved) return fallback;
+
+  try {
+    const parsed = JSON.parse(saved);
+    return parsed && typeof parsed === "object" ? parsed : fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+const getSafeSymbol = (value) => (value && SYMBOLS[value] ? value : DEFAULT_SYMBOL);
+
 // Helper functions
 const getETTime = () => toZonedTime(new Date(), TIMEZONE);
 const formatETTime = () => formatInTimeZone(new Date(), TIMEZONE, "HH:mm");
@@ -470,16 +486,16 @@ const MarketSessions = ({ currentTime, isWeekendMode }) => {
 // Calculator Tab Component
 const CalculatorTab = ({ symbol, onSymbolChange }) => {
   const [risk, setRisk] = useState(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.CALCULATOR);
-    return saved ? JSON.parse(saved).risk || "" : "";
+    const saved = getSafeStoredObject(STORAGE_KEYS.CALCULATOR);
+    return saved.risk || "";
   });
   const [stop, setStop] = useState(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.CALCULATOR);
-    return saved ? JSON.parse(saved).stop || "" : "";
+    const saved = getSafeStoredObject(STORAGE_KEYS.CALCULATOR);
+    return saved.stop || "";
   });
   const [tp, setTp] = useState(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.CALCULATOR);
-    return saved ? JSON.parse(saved).tp || "" : "";
+    const saved = getSafeStoredObject(STORAGE_KEYS.CALCULATOR);
+    return saved.tp || "";
   });
 
   useEffect(() => {
@@ -490,7 +506,7 @@ const CalculatorTab = ({ symbol, onSymbolChange }) => {
     const riskNum = parseFloat(risk) || 0;
     const stopNum = parseFloat(stop) || 0;
     const tpNum = parseFloat(tp) || 0;
-    const symbolData = SYMBOLS[symbol];
+    const symbolData = SYMBOLS[symbol] || SYMBOLS[DEFAULT_SYMBOL];
 
     if (riskNum <= 0 || stopNum <= 0) {
       return { contracts: 0, totalRisk: 0, profit: 0, isBTC: symbol === "BTCUSD" };
@@ -519,7 +535,7 @@ const CalculatorTab = ({ symbol, onSymbolChange }) => {
   };
 
   const riskTier = getRiskTier(calculation.totalRisk);
-  const symbolData = SYMBOLS[symbol];
+  const symbolData = SYMBOLS[symbol] || SYMBOLS[DEFAULT_SYMBOL];
   const unitLabel = symbol === "BTCUSD" ? "USD" : symbolData.unit === "points" ? "pts" : "price";
 
   const handleReset = () => {
@@ -706,13 +722,10 @@ const WeekendReview = () => (
 const ChecklistTab = ({ currentTime, isWeekendMode }) => {
   const [activeSession, setActiveSession] = useState(() => getCurrentChecklistSession());
   const [checkedItems, setCheckedItems] = useState(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.CHECKLIST);
-    if (saved) {
-      const data = JSON.parse(saved);
-      const todayKey = getETDateKey();
-      if (data.dateKey === todayKey) {
-        return data.items || {};
-      }
+    const data = getSafeStoredObject(STORAGE_KEYS.CHECKLIST);
+    const todayKey = getETDateKey();
+    if (data.dateKey === todayKey) {
+      return data.items || {};
     }
     return {};
   });
@@ -920,7 +933,7 @@ const BottomNav = ({ activeTab, onTabChange }) => (
 // Main App
 function App() {
   const [activeTab, setActiveTab] = useState("calculator");
-  const [symbol, setSymbol] = useState(() => localStorage.getItem(STORAGE_KEYS.SYMBOL) || "MNQ");
+  const [symbol, setSymbol] = useState(() => getSafeSymbol(localStorage.getItem(STORAGE_KEYS.SYMBOL)));
   const [currentTime, setCurrentTime] = useState(formatETTime());
   const [isWeekendMode, setIsWeekendMode] = useState(isWeekend());
   const [isSquidsFontReady, setIsSquidsFontReady] = useState(false);
@@ -939,7 +952,7 @@ function App() {
 
   // Save symbol to localStorage
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.SYMBOL, symbol);
+    localStorage.setItem(STORAGE_KEYS.SYMBOL, getSafeSymbol(symbol));
   }, [symbol]);
 
   // Avoid thin->bold header flash: wait for Anton to be ready, then reveal title
@@ -947,14 +960,15 @@ function App() {
     let mounted = true;
     const fallbackTimer = setTimeout(() => {
       if (mounted) setIsSquidsFontReady(true);
-    }, 900);
+    }, 2500);
 
     const prepareFont = async () => {
       try {
-        if (document.fonts?.load) {
+        if (document.fonts?.load && document.fonts?.ready) {
           await Promise.all([
             document.fonts.load("400 24px Anton"),
-            document.fonts.load("400 30px Anton")
+            document.fonts.load("400 30px Anton"),
+            document.fonts.ready
           ]);
         }
       } catch {
@@ -972,15 +986,22 @@ function App() {
     };
   }, []);
 
+  const handleSymbolChange = useCallback((nextSymbol) => {
+    if (!SYMBOLS[nextSymbol]) return;
+    setSymbol(nextSymbol);
+  }, []);
+
   return (
     <div className="min-h-screen bg-[#0f0f0f] flex justify-center" data-testid="app-root">
       <div className="w-full max-w-[560px] min-h-screen px-5 pt-4 pb-24">
         {/* App Header */}
         <div className="flex items-center justify-center mb-4 min-h-[40px]">
           <span
-            className={`font-squids text-2xl tracking-widest leading-none text-white/90 inline-flex items-center justify-center transition-opacity duration-200 ${
-              isSquidsFontReady ? "opacity-100" : "opacity-0"
-            }`}
+            className="font-squids text-2xl tracking-widest leading-none text-white/90 inline-flex items-center justify-center"
+            style={{
+              opacity: isSquidsFontReady ? 1 : 0,
+              visibility: isSquidsFontReady ? "visible" : "hidden"
+            }}
             data-testid="app-title"
           >
             Y<span className="text-3xl -mt-1 inline-block">$</span>ER
@@ -989,7 +1010,7 @@ function App() {
         {activeTab === "calculator" ? (
           <>
             <MarketSessions currentTime={currentTime} isWeekendMode={isWeekendMode} />
-            <CalculatorTab symbol={symbol} onSymbolChange={setSymbol} />
+            <CalculatorTab symbol={symbol} onSymbolChange={handleSymbolChange} />
           </>
         ) : (
           <ChecklistTab currentTime={currentTime} isWeekendMode={isWeekendMode} />
