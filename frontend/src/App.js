@@ -6,6 +6,7 @@ import { Calculator, ClipboardCheck, Check } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const TIMEZONE = "America/Toronto";
+const MINUTE_IN_MS = 60 * 1000;
 
 // Symbol configuration
 const SYMBOLS = {
@@ -768,7 +769,7 @@ const ChecklistTab = ({ currentTime, isWeekendMode }) => {
     syncSession();
     const alignTimeout = setTimeout(() => {
       syncSession();
-      const interval = setInterval(syncSession, 60 * 1000);
+      const interval = setInterval(syncSession, MINUTE_IN_MS);
       autoSwitchIntervalRef.current = interval;
     }, getMillisecondsToNextMinute());
 
@@ -946,12 +947,15 @@ function App() {
     let mounted = true;
     const fallbackTimer = setTimeout(() => {
       if (mounted) setIsSquidsFontReady(true);
-    }, 1500);
+    }, 900);
 
     const prepareFont = async () => {
       try {
         if (document.fonts?.load) {
-          await document.fonts.load("400 24px Anton");
+          await Promise.all([
+            document.fonts.load("400 24px Anton"),
+            document.fonts.load("400 30px Anton")
+          ]);
         }
       } catch {
         // Fallback timer handles reveal if font loading API fails
