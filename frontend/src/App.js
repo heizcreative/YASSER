@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import "@/App.css";
-import { format } from "date-fns";
+import { format, subDays } from "date-fns";
 import { toZonedTime, formatInTimeZone } from "date-fns-tz";
 import { Calculator, ClipboardCheck, Check } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 const TIMEZONE = "America/New_York";
 const MINUTE_IN_MS = 60 * 1000;
 const FONT_LOAD_FALLBACK_MS = 1200;
+const CHECKLIST_RESET_HOUR = 20;
 
 // Symbol configuration
 const SYMBOLS = {
@@ -102,6 +103,14 @@ const getSafeSymbol = (value) => (typeof value === "string" && SYMBOLS[value] ? 
 const getETTime = () => toZonedTime(new Date(), TIMEZONE);
 const formatETTime = () => formatInTimeZone(new Date(), TIMEZONE, "HH:mm");
 const getETDateKey = () => formatInTimeZone(new Date(), TIMEZONE, "yyyy-MM-dd");
+const getChecklistDateKey = () => {
+  const now = new Date();
+  const etHour = parseInt(formatInTimeZone(now, TIMEZONE, "H"), 10);
+  if (etHour >= CHECKLIST_RESET_HOUR) return formatInTimeZone(now, TIMEZONE, "yyyy-MM-dd");
+
+  const yesterday = subDays(now, 1);
+  return formatInTimeZone(yesterday, TIMEZONE, "yyyy-MM-dd");
+};
 
 // Weekend market closure: Friday 5PM ET → Sunday 6PM ET
 const isMarketClosed = (etDate) => {
@@ -733,8 +742,8 @@ const ChecklistTab = ({ currentTime, isWeekendMode }) => {
   const [activeSession, setActiveSession] = useState(() => getCurrentChecklistSession());
   const [checkedItems, setCheckedItems] = useState(() => {
     const data = getSafeStoredObject(STORAGE_KEYS.CHECKLIST);
-    const todayKey = getETDateKey();
-    if (data.dateKey === todayKey) {
+    const checklistDateKey = getChecklistDateKey();
+    if (data.dateKey === checklistDateKey) {
       return data.items || {};
     }
     return {};
@@ -750,13 +759,13 @@ const ChecklistTab = ({ currentTime, isWeekendMode }) => {
       const minute = now.getMinutes();
       
       // Check for reset at 8PM (20:00)
-      if (hour === 20 && minute === 0) {
-        const resetKey = `${getETDateKey()}-20`;
+      if (hour === CHECKLIST_RESET_HOUR && minute === 0) {
+        const resetKey = `${getETDateKey()}-${CHECKLIST_RESET_HOUR}`;
         if (lastResetRef.current !== resetKey) {
           lastResetRef.current = resetKey;
           setCheckedItems({});
           localStorage.setItem(STORAGE_KEYS.CHECKLIST, JSON.stringify({
-            dateKey: getETDateKey(),
+            dateKey: getChecklistDateKey(),
             items: {}
           }));
         }
@@ -771,7 +780,7 @@ const ChecklistTab = ({ currentTime, isWeekendMode }) => {
   // Save to localStorage
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.CHECKLIST, JSON.stringify({
-      dateKey: getETDateKey(),
+      dateKey: getChecklistDateKey(),
       items: checkedItems
     }));
   }, [checkedItems]);
