@@ -45,7 +45,7 @@
 
 html, body, #root {
     min-height: 100vh;
-    background: #0f0f0f !important;
+    background: #000 !important;
 }
 
 body {
@@ -53,7 +53,7 @@ body {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     color: rgba(255, 255, 255, 0.92);
-    background: #0f0f0f !important;
+    background: #000 !important;
 }
 
 code, .font-mono {
@@ -97,26 +97,45 @@ h1, h2, h3, h4, h5, h6, .font-heading {
 .glass-pill,
 .glass-select-trigger,
 .glass-select-content {
-    background: rgba(24, 24, 27, 0.75);
-    backdrop-filter: blur(40px) saturate(170%);
-    -webkit-backdrop-filter: blur(40px) saturate(170%);
+    position: relative;
+    overflow: hidden;
+    background: rgba(0, 0, 0, 0.78);
+    backdrop-filter: blur(56px) saturate(160%);
+    -webkit-backdrop-filter: blur(56px) saturate(160%);
     border: 1px solid rgba(255, 255, 255, 0.1);
     box-shadow:
-        0 20px 48px rgba(0, 0, 0, 0.6),
-        inset 0 1px 0 rgba(255, 255, 255, 0.09),
-        inset 0 -1px 0 rgba(0, 0, 0, 0.32);
+        0 25px 50px -12px rgba(0, 0, 0, 0.95),
+        0 12px 24px -12px rgba(0, 0, 0, 0.9),
+        inset 0 1px 0 rgba(255, 255, 255, 0.08),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.5);
+}
+
+.glass-panel::before,
+.glass-card::before,
+.glass-input::before,
+.glass-button::before,
+.glass-pill::before,
+.glass-select-trigger::before,
+.glass-select-content::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 46%;
+    pointer-events: none;
+    border-radius: inherit;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.06) 34%, rgba(255, 255, 255, 0) 100%);
 }
 
 .glass-panel {
-    border-radius: 22px;
+    border-radius: 24px;
 }
 
 .glass-card {
-    border-radius: 22px;
+    border-radius: 24px;
 }
 
 .glass-input {
-    border-radius: 16px;
+    border-radius: 18px;
     transition: all 0.2s ease;
 }
 
@@ -130,12 +149,12 @@ h1, h2, h3, h4, h5, h6, .font-heading {
 }
 
 .glass-button {
-    border-radius: 22px;
+    border-radius: 24px;
     transition: all 0.2s ease;
 }
 
 .glass-button:hover {
-    background: rgba(24, 24, 27, 0.82);
+    background: rgba(0, 0, 0, 0.85);
     border-color: rgba(255, 255, 255, 0.14);
 }
 
@@ -145,17 +164,21 @@ h1, h2, h3, h4, h5, h6, .font-heading {
 
 /* Premium symbol selector glass surface */
 .glass-select-trigger {
-    height: 2.5rem;
-    width: 11.5rem;
-    border-radius: 22px;
+    height: 2.4rem;
+    width: 11rem;
+    border-radius: 24px;
 }
 
 .glass-select-content {
-    border-radius: 22px;
+    border-radius: 24px;
+    padding: 0.35rem;
 }
 
 .glass-select-item {
-    border-radius: 1rem;
+    border-radius: 14px;
+    min-height: 2rem;
+    padding-inline: 0.65rem 1.95rem;
+    font-size: 0.78rem;
 }
 
 .glass-select-item[data-highlighted],
