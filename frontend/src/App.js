@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import "@/App.css";
-import { format } from "date-fns";
+import { format, subDays } from "date-fns";
 import { toZonedTime, formatInTimeZone } from "date-fns-tz";
 import { Calculator, ClipboardCheck, Check } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -107,8 +107,7 @@ const getChecklistDateKey = () => {
   const etHour = Number(formatInTimeZone(now, TIMEZONE, "H"));
   if (etHour >= 20) return formatInTimeZone(now, TIMEZONE, "yyyy-MM-dd");
 
-  const yesterday = new Date(now);
-  yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+  const yesterday = subDays(now, 1);
   return formatInTimeZone(yesterday, TIMEZONE, "yyyy-MM-dd");
 };
 
