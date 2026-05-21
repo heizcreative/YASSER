@@ -951,7 +951,7 @@ function App() {
     const prepareFont = async () => {
       try {
         if (document.fonts?.load) {
-          await document.fonts.load("400 28px Anton");
+          await document.fonts.load("400 24px Anton");
         }
       } catch {
         // Fallback timer handles reveal if font loading API fails
