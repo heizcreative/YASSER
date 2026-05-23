@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 const TIMEZONE = "America/New_York";
 const MINUTE_IN_MS = 60 * 1000;
 const FONT_LOAD_FALLBACK_MS = 1200;
+// Run Mode tuning values: time is in seconds, movement in px/sec unless noted.
 const RUN_MODE_INITIAL_SPAWN_TIMER = 0.75;
 const RUN_MODE_MAX_FRAME_DELTA = 0.033;
 const RUN_MODE_BASE_SPEED = 210;
@@ -17,6 +18,12 @@ const RUN_MODE_INITIAL_SPAWN_INTERVAL = 0.92;
 const RUN_MODE_SPAWN_INTERVAL_DECAY = 0.014;
 const RUN_MODE_BASE_SCORE_RATE = 23;
 const RUN_MODE_SCORE_INCREASE_RATE = 0.9;
+const RUN_MODE_BALL_SMOOTHING = 11;
+const RUN_MODE_OBSTACLE_MIN_WIDTH_RATIO = 0.18;
+const RUN_MODE_OBSTACLE_WIDTH_VARIANCE = 0.18;
+const RUN_MODE_OBSTACLE_MIN_HEIGHT = 14;
+const RUN_MODE_OBSTACLE_HEIGHT_VARIANCE = 24;
+const RUN_MODE_DEATH_PARTICLE_COUNT = 22;
 
 // Symbol configuration
 const SYMBOLS = {
@@ -1045,8 +1052,10 @@ const RunModeTab = () => {
     };
 
     const spawnObstacle = () => {
-      const w = game.width * (0.18 + Math.random() * 0.18);
-      const h = 14 + Math.random() * 24;
+      const w =
+        game.width *
+        (RUN_MODE_OBSTACLE_MIN_WIDTH_RATIO + Math.random() * RUN_MODE_OBSTACLE_WIDTH_VARIANCE);
+      const h = RUN_MODE_OBSTACLE_MIN_HEIGHT + Math.random() * RUN_MODE_OBSTACLE_HEIGHT_VARIANCE;
       const x = Math.random() * (game.width - w);
       game.obstacles.push({
         x,
@@ -1069,7 +1078,7 @@ const RunModeTab = () => {
       game.dead = true;
       game.deathElapsed = 0;
       game.shake = 10;
-      game.particles = Array.from({ length: 22 }, () => {
+      game.particles = Array.from({ length: RUN_MODE_DEATH_PARTICLE_COUNT }, () => {
         const angle = Math.random() * Math.PI * 2;
         const speed = 130 + Math.random() * 210;
         return {
@@ -1199,7 +1208,7 @@ const RunModeTab = () => {
         RUN_MODE_INITIAL_SPAWN_INTERVAL - game.elapsed * RUN_MODE_SPAWN_INTERVAL_DECAY
       );
 
-      game.ballX += (game.targetX - game.ballX) * Math.min(1, dt * 11);
+      game.ballX += (game.targetX - game.ballX) * Math.min(1, dt * RUN_MODE_BALL_SMOOTHING);
 
       if (!game.dead) {
         game.spawnTimer -= dt;
