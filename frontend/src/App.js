@@ -961,6 +961,7 @@ const RunModeTab = () => {
   const gameRef = useRef({
     width: 0,
     height: 0,
+    stageLeft: 0,
     ballX: 0,
     ballY: 0,
     targetX: 0,
@@ -982,11 +983,8 @@ const RunModeTab = () => {
   };
 
   const clampBallTarget = useCallback((clientX) => {
-    const stage = stageRef.current;
-    if (!stage) return;
-    const rect = stage.getBoundingClientRect();
     const game = gameRef.current;
-    const x = clientX - rect.left;
+    const x = clientX - game.stageLeft;
     const min = game.ballRadius;
     const max = Math.max(min, game.width - game.ballRadius);
     game.targetX = Math.min(max, Math.max(min, x));
@@ -1039,10 +1037,17 @@ const RunModeTab = () => {
 
       game.width = width;
       game.height = height;
+      game.stageLeft = rect.left;
       game.ballRadius = Math.max(10, Math.min(16, width * 0.03));
       game.ballY = height - 70;
       game.ballX = width / 2;
       game.targetX = game.ballX;
+    };
+
+    const updateStageLeft = () => {
+      const stageElement = stageRef.current;
+      if (!stageElement) return;
+      gameRef.current.stageLeft = stageElement.getBoundingClientRect().left;
     };
 
     const roundedRect = (x, y, w, h, r) => {
@@ -1269,10 +1274,12 @@ const RunModeTab = () => {
     resetGame();
     rafRef.current = requestAnimationFrame(frame);
     window.addEventListener("resize", resizeCanvas);
+    window.addEventListener("scroll", updateStageLeft, { passive: true });
 
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       window.removeEventListener("resize", resizeCanvas);
+      window.removeEventListener("scroll", updateStageLeft);
       pointerDraggingRef.current = false;
     };
   }, [screen]);
