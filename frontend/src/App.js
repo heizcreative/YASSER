@@ -18,7 +18,6 @@ const RUN_MODE_INITIAL_SPAWN_INTERVAL = 0.92;
 const RUN_MODE_SPAWN_INTERVAL_DECAY = 0.014;
 const RUN_MODE_BASE_SCORE_RATE = 23;
 const RUN_MODE_SCORE_INCREASE_RATE = 0.9;
-const RUN_MODE_BALL_SMOOTHING = 11;
 const RUN_MODE_OBSTACLE_MIN_WIDTH_RATIO = 0.18;
 const RUN_MODE_OBSTACLE_WIDTH_VARIANCE = 0.18;
 const RUN_MODE_OBSTACLE_MIN_HEIGHT = 14;
@@ -29,6 +28,10 @@ const RUN_MODE_MIN_SLOWDOWN = 0.22;
 const RUN_MODE_SLOWDOWN_RATE = 1.5;
 const RUN_MODE_PARTICLE_GRAVITY = 280;
 const RUN_MODE_DEATH_DURATION_SECONDS = 1.2;
+const RUN_MODE_FIXED_TIMESTEP = 1 / 120;
+const RUN_MODE_MAX_ACCUMULATED_TIME = 0.12;
+const RUN_MODE_BALL_SPRING = 68;
+const RUN_MODE_BALL_DAMPING = 13.5;
 
 // Symbol configuration
 const SYMBOLS = {
@@ -577,7 +580,7 @@ const CalculatorTab = ({ symbol, onSymbolChange }) => {
           >
             <Select value={symbol} onValueChange={onSymbolChange}>
               <SelectTrigger 
-                className="h-9 w-auto px-4 rounded-full border border-white/10 bg-black/70 backdrop-blur-md text-white/90 text-base sm:text-sm font-mono shadow-sm"
+                className="h-9 w-auto px-4 rounded-full border border-white/10 bg-zinc-950/70 backdrop-blur-2xl text-white/90 text-base sm:text-sm font-mono"
                 data-testid="symbol-selector"
               >
                 <SelectValue />
@@ -587,7 +590,7 @@ const CalculatorTab = ({ symbol, onSymbolChange }) => {
                 sideOffset={8}
                 side="bottom"
                 align="center"
-                className="z-[100] fixed border border-white/10 bg-black/70 text-white/90 backdrop-blur-md shadow-lg"
+                className="z-[100] fixed border border-white/10 bg-zinc-950/70 text-white/90 backdrop-blur-2xl shadow-sm"
               >
                 {Object.keys(SYMBOLS).map((sym) => (
                   <SelectItem 
@@ -932,7 +935,7 @@ const ChecklistTab = ({ currentTime, isWeekendMode }) => {
 
 const RunModeIcon = ({ active }) => (
   <div
-    className={`w-7 h-7 rounded-[10px] border border-white/15 bg-[#121212] backdrop-blur-xl flex items-center justify-center transition-all ${
+    className={`w-7 h-7 rounded-[10px] border border-white/10 bg-zinc-950/70 backdrop-blur-2xl flex items-center justify-center transition-all ${
       active ? "shadow-[0_0_16px_rgba(61,120,255,0.22)]" : ""
     }`}
   >
@@ -957,6 +960,8 @@ const RunModeTab = () => {
   const stageRef = useRef(null);
   const canvasRef = useRef(null);
   const rafRef = useRef(null);
+  const stageRectRef = useRef(null);
+  const activePointerIdRef = useRef(null);
   const pointerDraggingRef = useRef(false);
   const gameRef = useRef({
     width: 0,
@@ -964,6 +969,8 @@ const RunModeTab = () => {
     ballX: 0,
     ballY: 0,
     targetX: 0,
+    ballVelocityX: 0,
+    dragOffsetX: 0,
     ballRadius: 10,
     elapsed: 0,
     score: 0,
@@ -981,21 +988,36 @@ const RunModeTab = () => {
     setScreen("playing");
   };
 
-  const clampBallTarget = useCallback((clientX) => {
+  const syncStageRect = useCallback(() => {
     const stage = stageRef.current;
-    if (!stage) return;
+    if (!stage) return null;
     const rect = stage.getBoundingClientRect();
+    stageRectRef.current = rect;
+    return rect;
+  }, []);
+
+  const clampBallTarget = useCallback((clientX, rectOverride) => {
+    const rect = rectOverride || stageRectRef.current || syncStageRect();
+    if (!rect) return;
     const game = gameRef.current;
-    const x = clientX - rect.left;
+    const x = clientX - rect.left + game.dragOffsetX;
     const min = game.ballRadius;
     const max = Math.max(min, game.width - game.ballRadius);
     game.targetX = Math.min(max, Math.max(min, x));
-  }, []);
+  }, [syncStageRect]);
 
   const handlePointerDown = (event) => {
     if (screen !== "playing") return;
+    const rect = syncStageRect();
+    if (!rect) return;
+    const game = gameRef.current;
+    const pointerX = event.clientX - rect.left;
+    const grabRange = game.ballRadius * 2.4;
+    if (Math.abs(pointerX - game.ballX) > grabRange) return;
     pointerDraggingRef.current = true;
-    clampBallTarget(event.clientX);
+    activePointerIdRef.current = event.pointerId;
+    game.dragOffsetX = game.ballX - pointerX;
+    clampBallTarget(event.clientX, rect);
     if (event.currentTarget?.setPointerCapture) {
       event.currentTarget.setPointerCapture(event.pointerId);
     }
@@ -1003,13 +1025,19 @@ const RunModeTab = () => {
 
   const handlePointerMove = (event) => {
     if (screen !== "playing") return;
-    if (pointerDraggingRef.current || event.pointerType === "mouse") {
-      clampBallTarget(event.clientX);
-    }
+    if (!pointerDraggingRef.current) return;
+    if (activePointerIdRef.current !== event.pointerId) return;
+    clampBallTarget(event.clientX);
   };
 
-  const handlePointerUp = () => {
+  const handlePointerUp = (event) => {
+    if (activePointerIdRef.current !== null && event.pointerId !== activePointerIdRef.current) return;
     pointerDraggingRef.current = false;
+    activePointerIdRef.current = null;
+    gameRef.current.dragOffsetX = 0;
+    if (event.currentTarget?.releasePointerCapture && event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
   };
 
   useEffect(() => {
@@ -1024,10 +1052,12 @@ const RunModeTab = () => {
 
     const game = gameRef.current;
     let previousTimestamp = 0;
+    let accumulator = 0;
     let lastRenderedScore = -1;
 
     const resizeCanvas = () => {
       const rect = stage.getBoundingClientRect();
+      stageRectRef.current = rect;
       const dpr = window.devicePixelRatio || 1;
       const width = Math.max(320, rect.width);
       const height = Math.max(420, rect.height);
@@ -1043,6 +1073,7 @@ const RunModeTab = () => {
       game.ballY = height - 70;
       game.ballX = width / 2;
       game.targetX = game.ballX;
+      game.ballVelocityX = 0;
     };
 
     const roundedRect = (x, y, w, h, r) => {
@@ -1106,7 +1137,10 @@ const RunModeTab = () => {
       game.dead = false;
       game.deathElapsed = 0;
       game.shake = 0;
+      game.ballVelocityX = 0;
+      game.dragOffsetX = 0;
       previousTimestamp = 0;
+      accumulator = 0;
       lastRenderedScore = -1;
       setScore(0);
       resizeCanvas();
@@ -1198,15 +1232,11 @@ const RunModeTab = () => {
       }
     };
 
-    const frame = (timestamp) => {
-      if (!previousTimestamp) previousTimestamp = timestamp;
-      const rawDelta = Math.min(RUN_MODE_MAX_FRAME_DELTA, (timestamp - previousTimestamp) / 1000);
-      previousTimestamp = timestamp;
-
+    const update = (step) => {
       const slowdown = game.dead
         ? Math.max(RUN_MODE_MIN_SLOWDOWN, 1 - game.deathElapsed * RUN_MODE_SLOWDOWN_RATE)
         : 1;
-      const dt = rawDelta * slowdown;
+      const dt = step * slowdown;
       game.elapsed += game.dead ? 0 : dt;
       const speed = RUN_MODE_BASE_SPEED + game.elapsed * RUN_MODE_SPEED_INCREASE_RATE;
       const spawnInterval = Math.max(
@@ -1214,7 +1244,19 @@ const RunModeTab = () => {
         RUN_MODE_INITIAL_SPAWN_INTERVAL - game.elapsed * RUN_MODE_SPAWN_INTERVAL_DECAY
       );
 
-      game.ballX += (game.targetX - game.ballX) * Math.min(1, dt * RUN_MODE_BALL_SMOOTHING);
+      const springForce = (game.targetX - game.ballX) * RUN_MODE_BALL_SPRING;
+      const dampingForce = -game.ballVelocityX * RUN_MODE_BALL_DAMPING;
+      game.ballVelocityX += (springForce + dampingForce) * dt;
+      game.ballX += game.ballVelocityX * dt;
+      const minX = game.ballRadius;
+      const maxX = Math.max(minX, game.width - game.ballRadius);
+      if (game.ballX < minX) {
+        game.ballX = minX;
+        game.ballVelocityX = 0;
+      } else if (game.ballX > maxX) {
+        game.ballX = maxX;
+        game.ballVelocityX = 0;
+      }
 
       if (!game.dead) {
         game.spawnTimer -= dt;
@@ -1223,8 +1265,8 @@ const RunModeTab = () => {
           game.spawnTimer = spawnInterval;
         }
       } else {
-        game.deathElapsed += rawDelta;
-        game.shake = Math.max(0, game.shake - rawDelta * 16);
+        game.deathElapsed += step;
+        game.shake = Math.max(0, game.shake - step * 16);
       }
 
       for (const obstacle of game.obstacles) {
@@ -1252,6 +1294,18 @@ const RunModeTab = () => {
           setScore(roundedScore);
         }
       }
+    };
+
+    const frame = (timestamp) => {
+      if (!previousTimestamp) previousTimestamp = timestamp;
+      const rawDelta = Math.min(RUN_MODE_MAX_FRAME_DELTA, (timestamp - previousTimestamp) / 1000);
+      previousTimestamp = timestamp;
+      accumulator = Math.min(RUN_MODE_MAX_ACCUMULATED_TIME, accumulator + rawDelta);
+
+      while (accumulator >= RUN_MODE_FIXED_TIMESTEP) {
+        update(RUN_MODE_FIXED_TIMESTEP);
+        accumulator -= RUN_MODE_FIXED_TIMESTEP;
+      }
 
       draw(timestamp);
 
@@ -1274,13 +1328,14 @@ const RunModeTab = () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       window.removeEventListener("resize", resizeCanvas);
       pointerDraggingRef.current = false;
+      activePointerIdRef.current = null;
     };
   }, [screen]);
 
   return (
     <div
       ref={stageRef}
-      className="relative overflow-hidden rounded-3xl border border-white/10 bg-black/45 backdrop-blur-xl min-h-[68vh] shadow-[0_14px_40px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.04)]"
+      className="relative overflow-hidden rounded-3xl border border-white/10 bg-zinc-950/70 backdrop-blur-2xl min-h-[68vh] shadow-[0_14px_40px_rgba(0,0,0,0.34)]"
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
@@ -1340,12 +1395,12 @@ const RunModeTab = () => {
 // Bottom Navigation
 const BottomNav = ({ activeTab, onTabChange }) => (
   <div className="fixed bottom-0 left-0 right-0 flex justify-center z-[9999]" data-testid="bottom-nav">
-    <div className="w-full max-w-[560px] bg-[#0f0f0f] border-t border-white/[0.06] flex justify-around py-3 px-6">
+    <div className="w-full max-w-[560px] mx-3 mb-3 rounded-2xl border border-white/10 bg-zinc-950/70 backdrop-blur-2xl flex justify-around py-3 px-6">
       <button
         onClick={() => onTabChange("calculator")}
         className={`flex flex-col items-center gap-0.5 px-4 py-1.5 rounded-lg transition-colors ${
           activeTab === "calculator" 
-            ? "bg-white/5 text-crtv-blue" 
+            ? "bg-white/10 text-crtv-blue" 
             : "text-white/40 hover:text-white/60"
         }`}
         data-testid="nav-calculator-btn"
@@ -1357,7 +1412,7 @@ const BottomNav = ({ activeTab, onTabChange }) => (
         onClick={() => onTabChange("checklist")}
         className={`flex flex-col items-center gap-0.5 px-4 py-1.5 rounded-lg transition-colors ${
           activeTab === "checklist" 
-            ? "bg-white/5 text-crtv-blue" 
+            ? "bg-white/10 text-crtv-blue" 
             : "text-white/40 hover:text-white/60"
         }`}
         data-testid="nav-checklist-btn"
@@ -1369,7 +1424,7 @@ const BottomNav = ({ activeTab, onTabChange }) => (
         onClick={() => onTabChange("run")}
         className={`flex flex-col items-center gap-0.5 px-4 py-1.5 rounded-lg transition-colors ${
           activeTab === "run"
-            ? "bg-white/5 text-crtv-blue"
+            ? "bg-white/10 text-crtv-blue"
             : "text-white/40 hover:text-white/60"
         }`}
         data-testid="nav-run-btn"
