@@ -937,15 +937,11 @@ const RunModeIcon = ({ active }) => (
     }`}
   >
     <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-      <rect x="3.4" y="3" width="8.4" height="12" rx="1.4" fill="white" fillOpacity="0.92" />
-      <path d="M4.9 5.1h5.5M4.9 7.1h5.5M4.9 9.1h4.4" stroke="#101010" strokeOpacity="0.35" strokeWidth="0.6" />
-      <path d="M2.7 4.1v9.8" stroke="white" strokeOpacity="0.95" strokeWidth="0.9" strokeLinecap="round" />
-      <circle cx="2.7" cy="5.4" r="0.45" fill="#0F0F0F" />
-      <circle cx="2.7" cy="7.3" r="0.45" fill="#0F0F0F" />
-      <circle cx="2.7" cy="9.2" r="0.45" fill="#0F0F0F" />
-      <circle cx="2.7" cy="11.1" r="0.45" fill="#0F0F0F" />
-      <path d="M9.6 5.4l4.4-2.3c.33-.17.74-.04.92.29l.7 1.33c.17.33.04.74-.29.92L11 7.95l-1.4.1z" fill="#090909" />
-      <path d="M9.65 5.4L11 7.95" stroke="white" strokeOpacity="0.28" strokeWidth="0.5" />
+      <rect x="2.8" y="3.4" width="12.4" height="11.2" rx="2" stroke="white" strokeOpacity="0.88" strokeWidth="1.1" />
+      <path d="M5.4 7.1L7.25 8.95L5.4 10.8" stroke="white" strokeOpacity="0.9" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M9 11H12.55" stroke="white" strokeOpacity="0.9" strokeWidth="1.1" strokeLinecap="round" />
+      <circle cx="5.2" cy="5.4" r="0.45" fill="white" fillOpacity="0.7" />
+      <circle cx="6.8" cy="5.4" r="0.45" fill="white" fillOpacity="0.55" />
     </svg>
   </div>
 );
@@ -1451,7 +1447,7 @@ function App() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#0f0f0f] flex justify-center" data-testid="app-root">
+    <div className="min-h-screen bg-[#0f0f0f] flex justify-center" data-testid="app-root" data-active-tab={activeTab}>
       <div className="w-full max-w-[560px] min-h-screen px-5 pt-4 pb-24">
         {/* App Header */}
         <div className="flex items-center justify-center mb-4 min-h-[40px]">
