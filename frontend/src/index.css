@@ -189,17 +189,3 @@ input[type="number"] {
 .transition-all-smooth {
     transition: all 0.2s ease;
 }
-
-@media (min-width: 1024px) {
-    [data-active-tab="calculator"] .glass-panel,
-    [data-active-tab="checklist"] .glass-panel {
-        box-shadow:
-            0 4px 30px rgba(0, 0, 0, 0.3),
-            inset 0 -1px 0 rgba(0, 0, 0, 0.1);
-    }
-
-    [data-active-tab="calculator"] .glass-card,
-    [data-active-tab="checklist"] .glass-card {
-        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
-    }
-}
