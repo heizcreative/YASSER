@@ -932,7 +932,6 @@ const RunModeIcon = ({ active }) => (
     }`}
   >
     <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-      <rect x="3.4" y="3" width="8.4" height="12" rx="1.4" fill="white" />
       <rect x="3.4" y="3" width="8.4" height="12" rx="1.4" fill="white" fillOpacity="0.92" />
       <path d="M4.9 5.1h5.5M4.9 7.1h5.5M4.9 9.1h4.4" stroke="#101010" strokeOpacity="0.35" strokeWidth="0.6" />
       <path d="M2.7 4.1v9.8" stroke="white" strokeOpacity="0.95" strokeWidth="0.9" strokeLinecap="round" />
@@ -1334,7 +1333,7 @@ const RunModeTab = () => {
 // Bottom Navigation
 const BottomNav = ({ activeTab, onTabChange }) => (
   <div className="fixed bottom-0 left-0 right-0 flex justify-center z-[9999]" data-testid="bottom-nav">
-    <div className="w-full max-w-[560px] bg-[#0f0f0f] border-t border-white/[0.06] flex justify-around py-3 px-4">
+    <div className="w-full max-w-[560px] bg-[#0f0f0f] border-t border-white/[0.06] flex justify-around py-3 px-6">
       <button
         onClick={() => onTabChange("calculator")}
         className={`flex flex-col items-center gap-0.5 px-4 py-1.5 rounded-lg transition-colors ${
