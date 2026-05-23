@@ -984,11 +984,7 @@ const RunModeTab = () => {
 
   const clampBallTarget = useCallback((clientX) => {
     const game = gameRef.current;
-    if (game.stageLeft === null) {
-      const stage = stageRef.current;
-      if (!stage) return;
-      game.stageLeft = stage.getBoundingClientRect().left;
-    }
+    if (game.stageLeft === null) return;
     const x = clientX - game.stageLeft;
     const min = game.ballRadius;
     const max = Math.max(min, game.width - game.ballRadius);
@@ -1054,7 +1050,9 @@ const RunModeTab = () => {
     };
 
     const updateStageLeft = () => {
-      game.stageLeft = stage.getBoundingClientRect().left;
+      const stageElement = stageRef.current;
+      if (!stageElement) return;
+      gameRef.current.stageLeft = stageElement.getBoundingClientRect().left;
     };
 
     const roundedRect = (x, y, w, h, r) => {
