@@ -2,33 +2,37 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import "@/App.css";
 import { format } from "date-fns";
 import { toZonedTime, formatInTimeZone } from "date-fns-tz";
-import { Calculator, ClipboardCheck, Check } from "lucide-react";
+import { Calculator, ClipboardCheck, Check, Volume2, VolumeX } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const TIMEZONE = "America/New_York";
 const MINUTE_IN_MS = 60 * 1000;
 const FONT_LOAD_FALLBACK_MS = 1200;
-// Run Mode tuning values: time is in seconds, movement in px/sec unless noted.
-const RUN_MODE_INITIAL_SPAWN_TIMER = 0.75;
-const RUN_MODE_MAX_FRAME_DELTA = 0.033;
-const RUN_MODE_BASE_SPEED = 210;
-const RUN_MODE_SPEED_INCREASE_RATE = 20;
-const RUN_MODE_MIN_SPAWN_INTERVAL = 0.36;
-const RUN_MODE_INITIAL_SPAWN_INTERVAL = 0.92;
-const RUN_MODE_SPAWN_INTERVAL_DECAY = 0.014;
-const RUN_MODE_BASE_SCORE_RATE = 23;
-const RUN_MODE_SCORE_INCREASE_RATE = 0.9;
-const RUN_MODE_BALL_SMOOTHING = 11;
-const RUN_MODE_OBSTACLE_MIN_WIDTH_RATIO = 0.18;
-const RUN_MODE_OBSTACLE_WIDTH_VARIANCE = 0.18;
-const RUN_MODE_OBSTACLE_MIN_HEIGHT = 14;
-const RUN_MODE_OBSTACLE_HEIGHT_VARIANCE = 24;
-const RUN_MODE_DEATH_PARTICLE_COUNT = 22;
-const RUN_MODE_BALL_ROTATION_SPEED = 140;
-const RUN_MODE_MIN_SLOWDOWN = 0.22;
-const RUN_MODE_SLOWDOWN_RATE = 1.5;
-const RUN_MODE_PARTICLE_GRAVITY = 280;
-const RUN_MODE_DEATH_DURATION_SECONDS = 1.2;
+// FLOW RUNNER tuning values: time is in seconds, movement in px/sec unless noted.
+const FLOW_RUNNER = {
+  maxFrameDelta: 0.033,
+  gravity: 2300,
+  jumpVelocity: 760,
+  jumpHoldForce: 1300,
+  jumpHoldMax: 0.16,
+  vaultVelocity: 920,
+  slideDuration: 0.52,
+  vaultDuration: 0.48,
+  dashDuration: 0.22,
+  dashBoost: 1.55,
+  baseSpeed: 350,
+  speedRamp: 22,
+  flowSpeedFactor: 0.18,
+  baseSpawnInterval: 1.25,
+  minSpawnInterval: 0.62,
+  spawnAcceleration: 0.013,
+  flowDecayPerSecond: 5.4,
+  scoreDistanceFactor: 0.08,
+  scoreFlowFactor: 0.23,
+  scoreObstacleBonus: 48,
+  deathSlowMoDuration: 0.4,
+  deathZoomMax: 1.05
+};
 
 // Symbol configuration
 const SYMBOLS = {
@@ -946,50 +950,257 @@ const RunModeIcon = ({ active }) => (
   </div>
 );
 
-const RunModeTab = () => {
-  const [screen, setScreen] = useState("entry");
+const LegacyRunModeTab = () => {
+  const [screen, setScreen] = useState("idle");
   const [score, setScore] = useState(0);
   const [finalScore, setFinalScore] = useState(0);
+  const [flow, setFlow] = useState(0);
+  const [audioEnabled, setAudioEnabled] = useState(false);
+  const [perfectFlash, setPerfectFlash] = useState(0);
+  const [gameOverVisible, setGameOverVisible] = useState(false);
   const stageRef = useRef(null);
   const canvasRef = useRef(null);
   const rafRef = useRef(null);
-  const pointerDraggingRef = useRef(false);
+  const pointerRef = useRef({
+    down: false,
+    pointerId: null,
+    startX: 0,
+    startY: 0,
+    startTime: 0,
+    moved: false,
+    swipeHandled: false,
+    holdTriggered: false
+  });
+  const lastTapRef = useRef(0);
+  const audioContextRef = useRef(null);
   const gameRef = useRef({
     width: 0,
     height: 0,
-    stageLeft: 0,
-    ballX: 0,
-    ballY: 0,
-    targetX: 0,
-    ballRadius: 10,
     elapsed: 0,
     score: 0,
+    flow: 0,
+    worldDistance: 0,
+    passedObstacles: 0,
+    spawnTimer: 0.8,
     obstacles: [],
-    particles: [],
-    spawnTimer: RUN_MODE_INITIAL_SPAWN_TIMER,
+    groundY: 0,
     dead: false,
     deathElapsed: 0,
-    shake: 0
+    deathZoom: 1,
+    phase: 0,
+    flash: 0,
+    trails: [],
+    player: {
+      x: 0,
+      y: 0,
+      w: 0,
+      h: 0,
+      vy: 0,
+      onGround: true,
+      holdTimer: 0,
+      holdJump: false,
+      slideTimer: 0,
+      vaultTimer: 0,
+      dashTimer: 0
+    }
   });
 
-  const handleStart = () => {
+  const playSfx = useCallback(
+    (type) => {
+      if (!audioEnabled) return;
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+
+      if (!audioContextRef.current) audioContextRef.current = new AudioCtx();
+      const audioContext = audioContextRef.current;
+      if (audioContext.state === "suspended") {
+        audioContext.resume().catch(() => {});
+      }
+
+      const now = audioContext.currentTime;
+      const gainNode = audioContext.createGain();
+      gainNode.connect(audioContext.destination);
+
+      const oscillator = audioContext.createOscillator();
+      oscillator.type = type === "collision" ? "square" : "triangle";
+      oscillator.connect(gainNode);
+
+      if (type === "jump") {
+        oscillator.frequency.setValueAtTime(320, now);
+        oscillator.frequency.exponentialRampToValueAtTime(180, now + 0.12);
+        gainNode.gain.setValueAtTime(0.0001, now);
+        gainNode.gain.exponentialRampToValueAtTime(0.045, now + 0.02);
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.13);
+      } else if (type === "perfect") {
+        oscillator.frequency.setValueAtTime(540, now);
+        oscillator.frequency.exponentialRampToValueAtTime(820, now + 0.11);
+        gainNode.gain.setValueAtTime(0.0001, now);
+        gainNode.gain.exponentialRampToValueAtTime(0.05, now + 0.01);
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.14);
+      } else if (type === "dash") {
+        oscillator.frequency.setValueAtTime(180, now);
+        oscillator.frequency.exponentialRampToValueAtTime(420, now + 0.08);
+        gainNode.gain.setValueAtTime(0.0001, now);
+        gainNode.gain.exponentialRampToValueAtTime(0.05, now + 0.01);
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
+      } else {
+        oscillator.frequency.setValueAtTime(110, now);
+        oscillator.frequency.exponentialRampToValueAtTime(70, now + 0.17);
+        gainNode.gain.setValueAtTime(0.0001, now);
+        gainNode.gain.exponentialRampToValueAtTime(0.07, now + 0.015);
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+      }
+
+      oscillator.start(now);
+      oscillator.stop(now + 0.2);
+    },
+    [audioEnabled]
+  );
+
+  const resetGameState = useCallback(() => {
+    const game = gameRef.current;
+    const stage = stageRef.current;
+    const rect = stage ? stage.getBoundingClientRect() : { width: 360, height: 520 };
+    const width = Math.max(320, rect.width || 360);
+    const height = Math.max(430, rect.height || 520);
+    const playerWidth = Math.max(26, width * 0.06);
+    const playerHeight = Math.max(58, height * 0.14);
+    const groundY = height - Math.max(74, height * 0.16);
+
+    game.width = width;
+    game.height = height;
+    game.elapsed = 0;
+    game.score = 0;
+    game.flow = 0;
+    game.worldDistance = 0;
+    game.passedObstacles = 0;
+    game.spawnTimer = 0.8;
+    game.obstacles = [];
+    game.dead = false;
+    game.deathElapsed = 0;
+    game.deathZoom = 1;
+    game.phase = 0;
+    game.flash = 0;
+    game.groundY = groundY;
+    game.trails = [];
+    game.player = {
+      x: Math.max(48, width * 0.24),
+      y: groundY - playerHeight,
+      w: playerWidth,
+      h: playerHeight,
+      vy: 0,
+      onGround: true,
+      holdTimer: 0,
+      holdJump: false,
+      slideTimer: 0,
+      vaultTimer: 0,
+      dashTimer: 0
+    };
+
     setScore(0);
     setFinalScore(0);
-    setScreen("playing");
-  };
+    setFlow(0);
+    setPerfectFlash(0);
+    setGameOverVisible(false);
+  }, []);
 
-  const clampBallTarget = useCallback((clientX) => {
+  const startRun = useCallback(() => {
+    resetGameState();
+    setScreen("playing");
+  }, [resetGameState]);
+
+  const triggerCollision = useCallback(() => {
     const game = gameRef.current;
-    const x = clientX - game.stageLeft;
-    const min = game.ballRadius;
-    const max = Math.max(min, game.width - game.ballRadius);
-    game.targetX = Math.min(max, Math.max(min, x));
+    if (game.dead) return;
+    game.dead = true;
+    game.deathElapsed = 0;
+    playSfx("collision");
+  }, [playSfx]);
+
+  const registerPerfectAction = useCallback(
+    (action) => {
+      const game = gameRef.current;
+      const player = game.player;
+      const candidate = game.obstacles.find(
+        (obstacle) =>
+          !obstacle.cleared &&
+          obstacle.x + obstacle.w >= player.x - 22 &&
+          obstacle.x < player.x + game.width * 0.55
+      );
+
+      if (!candidate) {
+        game.flow = Math.max(0, game.flow - 4);
+        return;
+      }
+
+      const distance = candidate.x - (player.x + player.w);
+      const inWindow = distance < 170 && distance > -34;
+      if (inWindow && candidate.required === action) {
+        game.flow = Math.min(100, game.flow + 15);
+        game.flash = 1;
+        setPerfectFlash(1);
+        playSfx("perfect");
+      } else if (inWindow && candidate.required !== action) {
+        game.flow = Math.max(0, game.flow - 8);
+      }
+    },
+    [playSfx]
+  );
+
+  const applyAction = useCallback(
+    (action) => {
+      const game = gameRef.current;
+      const player = game.player;
+      if (game.dead || screen !== "playing") return;
+
+      if (action === "jump" && player.onGround) {
+        player.vy = -FLOW_RUNNER.jumpVelocity;
+        player.onGround = false;
+        player.holdJump = true;
+        player.holdTimer = 0;
+        registerPerfectAction("jump");
+        playSfx("jump");
+      } else if (action === "slide" && player.onGround) {
+        player.slideTimer = FLOW_RUNNER.slideDuration;
+        player.vaultTimer = 0;
+        registerPerfectAction("slide");
+      } else if (action === "vault" && player.onGround) {
+        player.vaultTimer = FLOW_RUNNER.vaultDuration;
+        player.slideTimer = 0;
+        player.vy = -FLOW_RUNNER.vaultVelocity;
+        player.onGround = false;
+        registerPerfectAction("vault");
+        playSfx("jump");
+      } else if (action === "dash") {
+        player.dashTimer = FLOW_RUNNER.dashDuration;
+        registerPerfectAction("dash");
+        playSfx("dash");
+      }
+    },
+    [playSfx, registerPerfectAction, screen]
+  );
+
+  const releaseJumpHold = useCallback(() => {
+    gameRef.current.player.holdJump = false;
   }, []);
 
   const handlePointerDown = (event) => {
+    if (screen === "idle") {
+      startRun();
+      return;
+    }
     if (screen !== "playing") return;
-    pointerDraggingRef.current = true;
-    clampBallTarget(event.clientX);
+
+    const pointer = pointerRef.current;
+    pointer.down = true;
+    pointer.pointerId = event.pointerId;
+    pointer.startX = event.clientX;
+    pointer.startY = event.clientY;
+    pointer.startTime = performance.now();
+    pointer.moved = false;
+    pointer.swipeHandled = false;
+    pointer.holdTriggered = false;
+
     if (event.currentTarget?.setPointerCapture) {
       event.currentTarget.setPointerCapture(event.pointerId);
     }
@@ -997,18 +1208,76 @@ const RunModeTab = () => {
 
   const handlePointerMove = (event) => {
     if (screen !== "playing") return;
-    if (pointerDraggingRef.current || event.pointerType === "mouse") {
-      clampBallTarget(event.clientX);
+    const pointer = pointerRef.current;
+    if (!pointer.down || pointer.pointerId !== event.pointerId || pointer.swipeHandled) return;
+
+    const dx = event.clientX - pointer.startX;
+    const dy = event.clientY - pointer.startY;
+    if (Math.abs(dx) > 7 || Math.abs(dy) > 7) pointer.moved = true;
+
+    if (Math.abs(dy) > 32 && Math.abs(dy) > Math.abs(dx) + 8) {
+      pointer.swipeHandled = true;
+      if (dy > 0) {
+        applyAction("slide");
+      } else {
+        applyAction("vault");
+      }
+      return;
+    }
+
+    if (!pointer.holdTriggered && performance.now() - pointer.startTime > 120) {
+      pointer.holdTriggered = true;
+      applyAction("jump");
     }
   };
 
-  const handlePointerUp = () => {
-    pointerDraggingRef.current = false;
+  const handlePointerUp = (event) => {
+    if (screen !== "playing") return;
+
+    const pointer = pointerRef.current;
+    if (pointer.pointerId !== event.pointerId) return;
+    const now = performance.now();
+    const duration = now - pointer.startTime;
+
+    if (!pointer.swipeHandled) {
+      const isTap = duration < 240 && !pointer.moved;
+      if (isTap) {
+        if (now - lastTapRef.current < 260) {
+          applyAction("dash");
+          lastTapRef.current = 0;
+        } else {
+          lastTapRef.current = now;
+          applyAction("jump");
+        }
+      }
+    }
+
+    releaseJumpHold();
+    pointer.down = false;
+    pointer.pointerId = null;
+    pointer.swipeHandled = false;
+    pointer.holdTriggered = false;
   };
 
   useEffect(() => {
-    if (screen !== "playing") return undefined;
+    if (screen === "gameover") {
+      const timer = setTimeout(() => setGameOverVisible(true), 60);
+      return () => clearTimeout(timer);
+    }
+    setGameOverVisible(false);
+    return undefined;
+  }, [screen]);
 
+  useEffect(
+    () => () => {
+      if (audioContextRef.current) {
+        audioContextRef.current.close().catch(() => {});
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
     const stage = stageRef.current;
     const canvas = canvasRef.current;
     if (!stage || !canvas) return undefined;
@@ -1016,15 +1285,12 @@ const RunModeTab = () => {
     const context = canvas.getContext("2d");
     if (!context) return undefined;
 
-    const game = gameRef.current;
-    let previousTimestamp = 0;
-    let lastRenderedScore = -1;
-
+    const dpr = window.devicePixelRatio || 1;
     const resizeCanvas = () => {
+      const game = gameRef.current;
       const rect = stage.getBoundingClientRect();
-      const dpr = window.devicePixelRatio || 1;
       const width = Math.max(320, rect.width);
-      const height = Math.max(420, rect.height);
+      const height = Math.max(430, rect.height);
       canvas.width = Math.floor(width * dpr);
       canvas.height = Math.floor(height * dpr);
       canvas.style.width = `${width}px`;
@@ -1033,17 +1299,10 @@ const RunModeTab = () => {
 
       game.width = width;
       game.height = height;
-      game.stageLeft = rect.left;
-      game.ballRadius = Math.max(10, Math.min(16, width * 0.03));
-      game.ballY = height - 70;
-      game.ballX = width / 2;
-      game.targetX = game.ballX;
-    };
-
-    const updateStageLeft = () => {
-      const stageElement = stageRef.current;
-      if (!stageElement) return;
-      gameRef.current.stageLeft = stageElement.getBoundingClientRect().left;
+      game.groundY = height - Math.max(74, height * 0.16);
+      game.player.x = Math.max(48, width * 0.24);
+      game.player.w = Math.max(26, width * 0.06);
+      game.player.h = Math.max(58, height * 0.14);
     };
 
     const roundedRect = (x, y, w, h, r) => {
@@ -1057,228 +1316,354 @@ const RunModeTab = () => {
     };
 
     const spawnObstacle = () => {
-      const w =
-        game.width *
-        (RUN_MODE_OBSTACLE_MIN_WIDTH_RATIO + Math.random() * RUN_MODE_OBSTACLE_WIDTH_VARIANCE);
-      const h = RUN_MODE_OBSTACLE_MIN_HEIGHT + Math.random() * RUN_MODE_OBSTACLE_HEIGHT_VARIANCE;
-      const x = Math.random() * (game.width - w);
-      game.obstacles.push({
-        x,
-        y: -h - 14,
-        w,
-        h,
-        radius: Math.min(12, h / 2)
-      });
-    };
+      const game = gameRef.current;
+      const difficulty = Math.min(1, game.elapsed / 95);
+      const weights = [
+        { kind: "low-wall", required: "jump", weight: 0.26 + difficulty * 0.06 },
+        { kind: "high-wall", required: "vault", weight: 0.2 + difficulty * 0.08 },
+        { kind: "barrier", required: "slide", weight: 0.2 + difficulty * 0.1 },
+        { kind: "gap", required: "jump", weight: 0.17 + difficulty * 0.05 },
+        { kind: "moving-hazard", required: "dash", weight: 0.17 + difficulty * 0.12 }
+      ];
+      const totalWeight = weights.reduce((acc, item) => acc + item.weight, 0);
+      let roll = Math.random() * totalWeight;
+      const selected =
+        weights.find((item) => {
+          roll -= item.weight;
+          return roll <= 0;
+        }) || weights[0];
 
-    const hasCollision = (obstacle) => {
-      const closestX = Math.max(obstacle.x, Math.min(game.ballX, obstacle.x + obstacle.w));
-      const closestY = Math.max(obstacle.y, Math.min(game.ballY, obstacle.y + obstacle.h));
-      const dx = game.ballX - closestX;
-      const dy = game.ballY - closestY;
-      return dx * dx + dy * dy < game.ballRadius * game.ballRadius;
-    };
+      const player = game.player;
+      const hScale = game.height;
+      const wScale = game.width;
+      const baseX = wScale + 40;
+      let obstacle = null;
 
-    const triggerDeath = () => {
-      game.dead = true;
-      game.deathElapsed = 0;
-      game.shake = 10;
-      game.particles = Array.from({ length: RUN_MODE_DEATH_PARTICLE_COUNT }, () => {
-        const angle = Math.random() * Math.PI * 2;
-        const speed = 130 + Math.random() * 210;
-        return {
-          x: game.ballX,
-          y: game.ballY,
-          vx: Math.cos(angle) * speed,
-          vy: Math.sin(angle) * speed,
-          life: 0.35 + Math.random() * 0.55,
-          age: 0,
-          size: 1.2 + Math.random() * 3
+      if (selected.kind === "low-wall") {
+        obstacle = {
+          kind: selected.kind,
+          required: selected.required,
+          x: baseX,
+          y: game.groundY - (player.h * 0.52 + 16),
+          w: player.w * 1.35,
+          h: player.h * 0.52 + 16,
+          points: FLOW_RUNNER.scoreObstacleBonus
         };
-      });
+      } else if (selected.kind === "high-wall") {
+        obstacle = {
+          kind: selected.kind,
+          required: selected.required,
+          x: baseX,
+          y: game.groundY - (player.h * 0.92 + 24),
+          w: player.w * 1.55,
+          h: player.h * 0.92 + 24,
+          points: FLOW_RUNNER.scoreObstacleBonus + 12
+        };
+      } else if (selected.kind === "barrier") {
+        obstacle = {
+          kind: selected.kind,
+          required: selected.required,
+          x: baseX,
+          y: game.groundY - player.h * 0.78,
+          w: player.w * 1.9,
+          h: 18,
+          points: FLOW_RUNNER.scoreObstacleBonus + 8
+        };
+      } else if (selected.kind === "gap") {
+        obstacle = {
+          kind: selected.kind,
+          required: selected.required,
+          x: baseX,
+          y: game.groundY,
+          w: Math.max(74, wScale * (0.12 + difficulty * 0.08)),
+          h: Math.max(52, hScale * 0.15),
+          points: FLOW_RUNNER.scoreObstacleBonus + 16
+        };
+      } else {
+        obstacle = {
+          kind: selected.kind,
+          required: selected.required,
+          x: baseX,
+          y: game.groundY - player.h * 0.68,
+          w: 28,
+          h: 28,
+          baseY: game.groundY - player.h * 0.66,
+          wave: Math.random() * Math.PI * 2,
+          points: FLOW_RUNNER.scoreObstacleBonus + 18
+        };
+      }
+
+      obstacle.cleared = false;
+      game.obstacles.push(obstacle);
     };
 
-    const resetGame = () => {
-      game.elapsed = 0;
-      game.score = 0;
-      game.obstacles = [];
-      game.particles = [];
-      game.spawnTimer = RUN_MODE_INITIAL_SPAWN_TIMER;
-      game.dead = false;
-      game.deathElapsed = 0;
-      game.shake = 0;
-      previousTimestamp = 0;
-      lastRenderedScore = -1;
-      setScore(0);
-      resizeCanvas();
+    const getPlayerBox = () => {
+      const game = gameRef.current;
+      const player = game.player;
+      const isSliding = player.slideTimer > 0;
+      const boxHeight = player.h * (isSliding ? 0.56 : 1);
+      const boxWidth = player.w * (player.dashTimer > 0 ? 1.18 : 1);
+      return {
+        x: player.x,
+        y: player.y + (player.h - boxHeight),
+        w: boxWidth,
+        h: boxHeight,
+        isSliding
+      };
     };
 
-    const draw = (timestamp) => {
-      context.clearRect(0, 0, game.width, game.height);
+    const intersects = (a, b) =>
+      a.x < b.x + b.w &&
+      a.x + a.w > b.x &&
+      a.y < b.y + b.h &&
+      a.y + a.h > b.y;
 
-      context.fillStyle = "rgba(8,8,10,0.55)";
-      context.fillRect(0, 0, game.width, game.height);
-
-      context.save();
-      if (game.shake > 0) {
-        const offsetX = (Math.random() - 0.5) * game.shake;
-        const offsetY = (Math.random() - 0.5) * game.shake;
-        context.translate(offsetX, offsetY);
-      }
-
-      context.strokeStyle = "rgba(255,255,255,0.035)";
-      context.lineWidth = 1;
-      for (let y = 30; y < game.height; y += 46) {
-        context.beginPath();
-        context.moveTo(12, y);
-        context.lineTo(game.width - 12, y);
-        context.stroke();
-      }
-
-      for (const obstacle of game.obstacles) {
-        roundedRect(obstacle.x, obstacle.y, obstacle.w, obstacle.h, obstacle.radius);
-        context.fillStyle = "rgba(20,20,26,0.7)";
-        context.fill();
-        context.strokeStyle = "rgba(255,255,255,0.14)";
-        context.lineWidth = 1;
-        context.stroke();
-      }
-
-      for (const particle of game.particles) {
-        const alpha = Math.max(0, 1 - particle.age / particle.life);
-        context.beginPath();
-        context.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
-        context.fillStyle = `rgba(160,210,255,${0.4 * alpha})`;
-        context.fill();
-      }
-
-      if (!game.dead) {
-        context.beginPath();
-        context.arc(game.ballX, game.ballY, game.ballRadius * 1.9, 0, Math.PI * 2);
-        const glow = context.createRadialGradient(
-          game.ballX,
-          game.ballY,
-          game.ballRadius * 0.45,
-          game.ballX,
-          game.ballY,
-          game.ballRadius * 2
-        );
-        glow.addColorStop(0, "rgba(166,222,255,0.46)");
-        glow.addColorStop(1, "rgba(166,222,255,0)");
-        context.fillStyle = glow;
-        context.fill();
-      }
-
-      context.beginPath();
-      context.arc(game.ballX, game.ballY, game.ballRadius, 0, Math.PI * 2);
-      context.fillStyle = game.dead ? "rgba(180,205,225,0.35)" : "rgba(210,240,255,0.85)";
-      context.fill();
-      context.lineWidth = 1;
-      context.strokeStyle = "rgba(255,255,255,0.7)";
-      context.stroke();
-
-      const rollAngle = (timestamp / RUN_MODE_BALL_ROTATION_SPEED) % (Math.PI * 2);
-      context.beginPath();
-      context.arc(
-        game.ballX + Math.cos(rollAngle) * game.ballRadius * 0.38,
-        game.ballY + Math.sin(rollAngle) * game.ballRadius * 0.38,
-        game.ballRadius * 0.18,
-        0,
-        Math.PI * 2
-      );
-      context.fillStyle = "rgba(120,150,170,0.7)";
-      context.fill();
-      context.restore();
-
-      if (game.dead) {
-        const flash = Math.max(0, 0.18 - game.deathElapsed * 0.24);
-        if (flash > 0) {
-          context.fillStyle = `rgba(255,255,255,${flash})`;
-          context.fillRect(0, 0, game.width, game.height);
-        }
-      }
-    };
-
-    const frame = (timestamp) => {
-      if (!previousTimestamp) previousTimestamp = timestamp;
-      const rawDelta = Math.min(RUN_MODE_MAX_FRAME_DELTA, (timestamp - previousTimestamp) / 1000);
-      previousTimestamp = timestamp;
-
-      const slowdown = game.dead
-        ? Math.max(RUN_MODE_MIN_SLOWDOWN, 1 - game.deathElapsed * RUN_MODE_SLOWDOWN_RATE)
-        : 1;
-      const dt = rawDelta * slowdown;
-      game.elapsed += game.dead ? 0 : dt;
-      const speed = RUN_MODE_BASE_SPEED + game.elapsed * RUN_MODE_SPEED_INCREASE_RATE;
+    const update = (dt, rawDelta) => {
+      const game = gameRef.current;
+      const player = game.player;
+      const flowSpeedBoost = 1 + (game.flow / 100) * FLOW_RUNNER.flowSpeedFactor;
+      const dashBoost = player.dashTimer > 0 ? FLOW_RUNNER.dashBoost : 1;
+      const speed =
+        (FLOW_RUNNER.baseSpeed + game.elapsed * FLOW_RUNNER.speedRamp) * flowSpeedBoost * dashBoost;
       const spawnInterval = Math.max(
-        RUN_MODE_MIN_SPAWN_INTERVAL,
-        RUN_MODE_INITIAL_SPAWN_INTERVAL - game.elapsed * RUN_MODE_SPAWN_INTERVAL_DECAY
+        FLOW_RUNNER.minSpawnInterval,
+        FLOW_RUNNER.baseSpawnInterval - game.elapsed * FLOW_RUNNER.spawnAcceleration
       );
 
-      game.ballX += (game.targetX - game.ballX) * Math.min(1, dt * RUN_MODE_BALL_SMOOTHING);
+      game.phase += dt * (0.8 + speed * 0.002);
+      game.worldDistance += speed * dt;
+      game.elapsed += game.dead ? 0 : dt;
+      game.spawnTimer -= game.dead ? 0 : dt;
+
+      if (!game.dead && game.spawnTimer <= 0) {
+        spawnObstacle();
+        game.spawnTimer = spawnInterval + Math.random() * 0.23;
+      }
 
       if (!game.dead) {
-        game.spawnTimer -= dt;
-        if (game.spawnTimer <= 0) {
-          spawnObstacle();
-          game.spawnTimer = spawnInterval;
+        if (!player.onGround) {
+          player.vy += FLOW_RUNNER.gravity * dt;
+          if (player.holdJump && player.holdTimer < FLOW_RUNNER.jumpHoldMax) {
+            player.vy -= FLOW_RUNNER.jumpHoldForce * dt;
+            player.holdTimer += dt;
+          }
+          player.y += player.vy * dt;
         }
+
+        if (player.slideTimer > 0) player.slideTimer = Math.max(0, player.slideTimer - dt);
+        if (player.vaultTimer > 0) player.vaultTimer = Math.max(0, player.vaultTimer - dt);
+        if (player.dashTimer > 0) player.dashTimer = Math.max(0, player.dashTimer - dt);
+
+        const floorY = game.groundY - player.h;
+        if (player.y >= floorY) {
+          player.y = floorY;
+          player.vy = 0;
+          player.onGround = true;
+          player.holdJump = false;
+          player.holdTimer = 0;
+        } else {
+          player.onGround = false;
+        }
+
+        game.flow = Math.max(0, game.flow - FLOW_RUNNER.flowDecayPerSecond * dt);
       } else {
         game.deathElapsed += rawDelta;
-        game.shake = Math.max(0, game.shake - rawDelta * 16);
+        const t = Math.min(1, game.deathElapsed / FLOW_RUNNER.deathSlowMoDuration);
+        game.deathZoom = 1 + FLOW_RUNNER.deathZoomMax * (1 - Math.pow(1 - t, 2)) * 0.05;
       }
 
       for (const obstacle of game.obstacles) {
-        obstacle.y += speed * dt;
-      }
-      game.obstacles = game.obstacles.filter((obstacle) => obstacle.y < game.height + obstacle.h + 20);
-
-      for (const particle of game.particles) {
-        particle.x += particle.vx * dt;
-        particle.y += particle.vy * dt;
-        particle.vy += RUN_MODE_PARTICLE_GRAVITY * dt;
-        particle.age += dt;
-      }
-      game.particles = game.particles.filter((particle) => particle.age <= particle.life);
-
-      if (!game.dead && game.obstacles.some(hasCollision)) {
-        triggerDeath();
-      }
-
-      if (!game.dead) {
-        game.score += dt * (RUN_MODE_BASE_SCORE_RATE + game.elapsed * RUN_MODE_SCORE_INCREASE_RATE);
-        const roundedScore = Math.floor(game.score);
-        if (roundedScore !== lastRenderedScore) {
-          lastRenderedScore = roundedScore;
-          setScore(roundedScore);
+        obstacle.x -= speed * dt;
+        if (obstacle.kind === "moving-hazard") {
+          obstacle.wave += dt * 4.3;
+          obstacle.y = obstacle.baseY + Math.sin(obstacle.wave) * 26;
         }
       }
 
-      draw(timestamp);
+      const playerBox = getPlayerBox();
+      for (const obstacle of game.obstacles) {
+        if (obstacle.cleared) continue;
 
-      if (game.dead && game.deathElapsed >= RUN_MODE_DEATH_DURATION_SECONDS) {
+        if (obstacle.kind === "gap") {
+          const overlapX =
+            playerBox.x + playerBox.w > obstacle.x + 8 && playerBox.x < obstacle.x + obstacle.w - 8;
+          const grounded = playerBox.y + playerBox.h >= game.groundY - 4;
+          if (!game.dead && overlapX && grounded) {
+            triggerCollision();
+            break;
+          }
+        } else if (obstacle.kind === "barrier") {
+          const hit = intersects(playerBox, obstacle);
+          if (!game.dead && hit && !playerBox.isSliding && player.dashTimer <= 0) {
+            triggerCollision();
+            break;
+          }
+        } else if (obstacle.kind === "high-wall") {
+          const hit = intersects(playerBox, obstacle);
+          if (!game.dead && hit && player.vaultTimer <= 0 && player.dashTimer <= 0) {
+            triggerCollision();
+            break;
+          }
+        } else {
+          const hit = intersects(playerBox, obstacle);
+          if (!game.dead && hit && player.dashTimer <= 0) {
+            triggerCollision();
+            break;
+          }
+        }
+
+        if (!obstacle.cleared && obstacle.x + obstacle.w < player.x - 8) {
+          obstacle.cleared = true;
+          game.passedObstacles += 1;
+          game.score += obstacle.points;
+          game.flow = Math.min(100, game.flow + 2.3);
+        }
+      }
+
+      game.obstacles = game.obstacles.filter((obstacle) => obstacle.x + obstacle.w > -80);
+      game.score += speed * dt * FLOW_RUNNER.scoreDistanceFactor + game.flow * dt * FLOW_RUNNER.scoreFlowFactor;
+      game.flash = Math.max(0, game.flash - dt * 3.5);
+
+      game.trails.unshift({
+        x: player.x + player.w * 0.48,
+        y: player.y + player.h * 0.6,
+        alpha: Math.max(0.12, game.flow / 100),
+        size: player.h * 0.28
+      });
+      if (game.trails.length > 22) game.trails.pop();
+      for (const trail of game.trails) trail.alpha *= 0.9;
+
+      if (game.dead && game.deathElapsed >= FLOW_RUNNER.deathSlowMoDuration) {
         const endScore = Math.floor(game.score);
         setFinalScore(endScore);
         setScore(endScore);
         setScreen("gameover");
-        return;
+      } else {
+        setScore(Math.floor(game.score));
+        setFlow(Math.round(game.flow));
       }
-
-      rafRef.current = requestAnimationFrame(frame);
     };
 
-    resetGame();
-    rafRef.current = requestAnimationFrame(frame);
+    const draw = () => {
+      const game = gameRef.current;
+      const player = game.player;
+
+      context.clearRect(0, 0, game.width, game.height);
+      context.fillStyle = "rgba(8, 11, 14, 0.96)";
+      context.fillRect(0, 0, game.width, game.height);
+
+      const parallax = game.phase * 60;
+      context.strokeStyle = "rgba(88, 238, 220, 0.07)";
+      context.lineWidth = 1;
+      for (let i = -1; i < 12; i += 1) {
+        const x = ((i * 90 - parallax) % (game.width + 90)) - 40;
+        context.beginPath();
+        context.moveTo(x, game.groundY - 140);
+        context.lineTo(x + 34, game.groundY - 220);
+        context.stroke();
+      }
+
+      const trackGradient = context.createLinearGradient(0, game.groundY - 30, 0, game.height);
+      trackGradient.addColorStop(0, "rgba(30, 40, 46, 0.26)");
+      trackGradient.addColorStop(1, "rgba(8, 10, 13, 0.95)");
+      context.fillStyle = trackGradient;
+      context.fillRect(0, game.groundY - 26, game.width, game.height - game.groundY + 26);
+
+      context.strokeStyle = "rgba(130, 230, 214, 0.32)";
+      context.lineWidth = 2;
+      context.beginPath();
+      context.moveTo(0, game.groundY);
+      context.lineTo(game.width, game.groundY);
+      context.stroke();
+
+      for (const obstacle of game.obstacles) {
+        if (obstacle.kind === "gap") {
+          context.fillStyle = "rgba(0, 0, 0, 0.75)";
+          context.fillRect(obstacle.x, game.groundY + 1, obstacle.w, obstacle.h);
+          context.fillStyle = "rgba(88, 238, 220, 0.13)";
+          context.fillRect(obstacle.x, game.groundY - 1, obstacle.w, 2);
+          continue;
+        }
+
+        const obstacleRadius = obstacle.kind === "moving-hazard" ? 14 : 8;
+        roundedRect(obstacle.x, obstacle.y, obstacle.w, obstacle.h, obstacleRadius);
+        context.fillStyle = "rgba(232, 240, 246, 0.12)";
+        context.fill();
+        context.strokeStyle = obstacle.required === "dash" ? "rgba(76, 184, 255, 0.45)" : "rgba(88, 238, 220, 0.28)";
+        context.lineWidth = obstacle.required === "dash" ? 1.8 : 1.3;
+        context.stroke();
+      }
+
+      if (game.flow > 55 || player.dashTimer > 0) {
+        for (let i = 0; i < game.trails.length; i += 1) {
+          const trail = game.trails[i];
+          const alpha = trail.alpha * (1 - i / game.trails.length) * 0.45;
+          if (alpha <= 0.01) continue;
+          context.beginPath();
+          context.arc(trail.x - i * 2.2, trail.y, trail.size * (1 - i / game.trails.length), 0, Math.PI * 2);
+          context.fillStyle = `rgba(68, 210, 255, ${alpha})`;
+          context.fill();
+        }
+      }
+
+      const isSliding = player.slideTimer > 0;
+      const playerHeight = player.h * (isSliding ? 0.56 : 1);
+      const playerWidth = player.w * (player.dashTimer > 0 ? 1.18 : 1);
+      const playerX = player.x;
+      const playerY = player.y + (player.h - playerHeight);
+
+      roundedRect(playerX, playerY, playerWidth, playerHeight, 8);
+      context.fillStyle = "rgba(240, 248, 255, 0.9)";
+      context.fill();
+      context.strokeStyle = `rgba(95, 220, 255, ${0.3 + Math.max(0.2, game.flow / 100) * 0.35})`;
+      context.lineWidth = 1.3;
+      context.stroke();
+
+      if (game.flash > 0) {
+        context.fillStyle = `rgba(84, 255, 218, ${game.flash * 0.2})`;
+        context.fillRect(0, 0, game.width, game.height);
+      }
+    };
+
+    let previousTimestamp = 0;
+    const loop = (timestamp) => {
+      if (!previousTimestamp) previousTimestamp = timestamp;
+      const rawDelta = Math.min(FLOW_RUNNER.maxFrameDelta, (timestamp - previousTimestamp) / 1000);
+      previousTimestamp = timestamp;
+
+      const game = gameRef.current;
+      const slowdown =
+        game.dead && game.deathElapsed < FLOW_RUNNER.deathSlowMoDuration
+          ? Math.max(0.08, 1 - game.deathElapsed / FLOW_RUNNER.deathSlowMoDuration)
+          : 1;
+      const dt = rawDelta * slowdown;
+
+      if (screen === "playing") {
+        update(dt, rawDelta);
+      }
+      draw();
+      rafRef.current = requestAnimationFrame(loop);
+    };
+
+    if (screen === "playing") {
+      resetGameState();
+    }
+
+    resizeCanvas();
+    rafRef.current = requestAnimationFrame(loop);
     window.addEventListener("resize", resizeCanvas);
-    window.addEventListener("scroll", updateStageLeft, { passive: true });
 
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       window.removeEventListener("resize", resizeCanvas);
-      window.removeEventListener("scroll", updateStageLeft);
-      pointerDraggingRef.current = false;
     };
-  }, [screen]);
+  }, [resetGameState, screen, triggerCollision]);
+
+  useEffect(() => {
+    if (perfectFlash <= 0) return undefined;
+    const timer = setTimeout(() => setPerfectFlash(0), 180);
+    return () => clearTimeout(timer);
+  }, [perfectFlash]);
 
   return (
     <div
@@ -1291,48 +1676,470 @@ const RunModeTab = () => {
       onPointerLeave={handlePointerUp}
       data-testid="run-mode-tab"
     >
-      {screen === "playing" && (
+      {(screen === "playing" || screen === "gameover") && (
         <>
           <canvas ref={canvasRef} className="absolute inset-0 w-full h-full touch-none" />
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20">
-            <div className="glass-card px-5 py-2 rounded-full border border-white/10">
-              <span className="text-xs text-white/60 uppercase tracking-wider mr-2">Score</span>
+          <div className="absolute top-4 right-4 z-30">
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                setAudioEnabled((prev) => !prev);
+              }}
+              className="glass-button h-9 w-9 rounded-xl border border-white/10 flex items-center justify-center text-white/80 active:scale-95 transition-transform"
+              aria-label={audioEnabled ? "Disable audio" : "Enable audio"}
+            >
+              {audioEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+            </button>
+          </div>
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-2 w-[72%] max-w-[280px]">
+            <div className="glass-card px-5 py-1.5 rounded-full border border-white/10">
+              <span className="text-[11px] text-white/60 uppercase tracking-[0.2em] mr-2">Score</span>
               <span className="text-lg font-mono text-white/95">{score}</span>
             </div>
+            <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden border border-white/10">
+              <div
+                className="h-full transition-all duration-150"
+                style={{
+                  width: `${Math.max(0, Math.min(100, flow))}%`,
+                  background: "linear-gradient(90deg, rgba(63,194,255,0.8), rgba(86,252,209,0.85))",
+                  boxShadow: flow > 70 ? "0 0 10px rgba(86,252,209,0.45)" : "none"
+                }}
+              />
+            </div>
           </div>
+          {perfectFlash > 0 && (
+            <div className="absolute top-20 left-1/2 -translate-x-1/2 text-[11px] uppercase tracking-[0.2em] text-[#83ffe1]/85 z-20 animate-pulse">
+              Perfect Move
+            </div>
+          )}
         </>
       )}
 
-      {screen === "entry" && (
+      {screen === "idle" && (
         <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center">
-          <div className="glass-card w-full max-w-[360px] p-8 border border-white/10">
-            <p className="text-xs uppercase tracking-[0.28em] text-white/45 mb-3">Run Mode</p>
-            <h2 className="text-2xl font-heading font-semibold text-white/92 mb-2">Focus Flow</h2>
-            <p className="text-sm text-white/55 mb-7">Slide the glowing ball through the market noise.</p>
+          <div className="glass-card w-full max-w-[360px] p-7 border border-white/10">
+            <p className="text-[11px] uppercase tracking-[0.32em] text-white/45 mb-3">FLOW RUNNER</p>
+            <h2 className="text-2xl font-heading font-semibold text-white/92 mb-3">Tap to Run</h2>
+            <p className="text-sm text-white/55 mb-6">Tap, hold, swipe, and dash to stay in flow.</p>
             <button
-              onClick={handleStart}
-              className="glass-button w-full py-3 rounded-2xl text-base font-semibold text-white hover:text-white/95 border border-white/12"
+              onClick={startRun}
+              className="glass-button w-full py-3 rounded-2xl text-base font-semibold text-white hover:text-white/95 border border-white/12 active:scale-[0.98] transition-transform"
               data-testid="run-start-btn"
             >
               Start Run
             </button>
+            <div className="mt-5 h-[2px] rounded-full bg-white/10 overflow-hidden">
+              <div className="h-full w-1/3 bg-gradient-to-r from-transparent via-[#5af0ff]/70 to-transparent animate-[pulse_1.7s_ease-in-out_infinite]" />
+            </div>
           </div>
         </div>
       )}
 
       {screen === "gameover" && (
-        <div className="absolute inset-0 flex items-center justify-center px-6">
+        <div
+          className={`absolute inset-0 flex items-center justify-center px-6 backdrop-blur-sm bg-black/45 transition-opacity duration-300 ${
+            gameOverVisible ? "opacity-100" : "opacity-0"
+          }`}
+        >
           <div className="glass-card w-full max-w-[340px] p-7 text-center border border-white/12">
-            <p className="text-xs uppercase tracking-[0.25em] text-white/45 mb-2">Run Complete</p>
+            <p className="text-xs uppercase tracking-[0.25em] text-white/45 mb-2">RUN COMPLETE</p>
             <p className="text-sm text-white/65">Final score</p>
             <p className="text-4xl font-mono text-white/95 mb-6 mt-1">{finalScore}</p>
             <button
-              onClick={handleStart}
-              className="glass-button w-full py-3 rounded-2xl text-base font-semibold text-white border border-white/12"
+              onClick={startRun}
+              className="glass-button w-full py-3 rounded-2xl text-base font-semibold text-white border border-white/12 active:scale-[0.98] transition-transform"
               data-testid="run-again-btn"
             >
               Run Again
             </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const RunModeTab = () => {
+  const [screen, setScreen] = useState("idle");
+  const [score, setScore] = useState(0);
+  const [finalScore, setFinalScore] = useState(0);
+  const [flow, setFlow] = useState(0);
+  const [audioEnabled, setAudioEnabled] = useState(false);
+  const [gameOverVisible, setGameOverVisible] = useState(false);
+  const [perfectMoveFlash, setPerfectMoveFlash] = useState(false);
+  const stageRef = useRef(null);
+  const canvasRef = useRef(null);
+  const rafRef = useRef(null);
+  const pointerRef = useRef({ down: false, moved: false, startX: 0, startY: 0, startTime: 0, consumed: false });
+  const lastTapRef = useRef(0);
+  const audioContextRef = useRef(null);
+  const gameRef = useRef({ width: 0, height: 0, elapsed: 0, obstacles: [], spawnTimer: 1, flow: 0, score: 0, dead: false, deathElapsed: 0, phase: 0, player: {} });
+
+  const playSfx = useCallback((kind) => {
+    if (!audioEnabled) return;
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    if (!audioContextRef.current) audioContextRef.current = new AudioCtx();
+    const ctx = audioContextRef.current;
+    if (ctx.state === "suspended") ctx.resume().catch(() => {});
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = kind === "hit" ? "square" : "triangle";
+    const freq = kind === "dash" ? [190, 440] : kind === "perfect" ? [480, 800] : kind === "hit" ? [120, 70] : [330, 180];
+    osc.frequency.setValueAtTime(freq[0], now);
+    osc.frequency.exponentialRampToValueAtTime(freq[1], now + 0.12);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(kind === "hit" ? 0.07 : 0.045, now + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.14);
+    osc.start(now);
+    osc.stop(now + 0.16);
+  }, [audioEnabled]);
+
+  const resetGame = useCallback(() => {
+    const stage = stageRef.current;
+    const rect = stage?.getBoundingClientRect() || { width: 360, height: 520 };
+    const width = Math.max(320, rect.width);
+    const height = Math.max(430, rect.height);
+    gameRef.current = {
+      width,
+      height,
+      elapsed: 0,
+      obstacles: [],
+      spawnTimer: 0.9,
+      flow: 8,
+      score: 0,
+      dead: false,
+      deathElapsed: 0,
+      phase: 0,
+      player: {
+        x: width * 0.25,
+        y: height - 160,
+        w: Math.max(26, width * 0.06),
+        h: Math.max(58, height * 0.14),
+        vy: 0,
+        onGround: true,
+        holdJump: false,
+        holdElapsed: 0,
+        slideTimer: 0,
+        vaultTimer: 0,
+        dashTimer: 0
+      }
+    };
+    setScore(0);
+    setFlow(8);
+    setPerfectMoveFlash(false);
+  }, []);
+
+  const startRun = useCallback(() => {
+    resetGame();
+    setGameOverVisible(false);
+    setFinalScore(0);
+    setScreen("playing");
+  }, [resetGame]);
+
+  const doAction = useCallback((action) => {
+    const game = gameRef.current;
+    const p = game.player;
+    if (game.dead || screen !== "playing") return;
+    if (action === "jump" && p.onGround) {
+      p.vy = -FLOW_RUNNER.jumpVelocity;
+      p.onGround = false;
+      p.holdJump = true;
+      p.holdElapsed = 0;
+      playSfx("jump");
+    } else if (action === "slide" && p.onGround) {
+      p.slideTimer = FLOW_RUNNER.slideDuration;
+    } else if (action === "vault" && p.onGround) {
+      p.vaultTimer = FLOW_RUNNER.vaultDuration;
+      p.vy = -FLOW_RUNNER.vaultVelocity;
+      p.onGround = false;
+      playSfx("jump");
+    } else if (action === "dash") {
+      p.dashTimer = FLOW_RUNNER.dashDuration;
+      playSfx("dash");
+    }
+    const next = game.obstacles.find((o) => !o.cleared && o.x > p.x - 24);
+    if (next) {
+      const d = next.x - (p.x + p.w);
+      if (d < 165 && d > -30 && next.required === action) {
+        game.flow = Math.min(100, game.flow + 15);
+        setPerfectMoveFlash(true);
+        playSfx("perfect");
+      } else {
+        game.flow = Math.max(0, game.flow - 6);
+      }
+    }
+  }, [playSfx, screen]);
+
+  const triggerHit = useCallback(() => {
+    const game = gameRef.current;
+    if (game.dead) return;
+    game.dead = true;
+    game.deathElapsed = 0;
+    playSfx("hit");
+  }, [playSfx]);
+
+  useEffect(() => {
+    if (perfectMoveFlash) {
+      const t = setTimeout(() => setPerfectMoveFlash(false), 170);
+      return () => clearTimeout(t);
+    }
+    return undefined;
+  }, [perfectMoveFlash]);
+
+  useEffect(() => {
+    if (screen === "gameover") {
+      const t = setTimeout(() => setGameOverVisible(true), 50);
+      return () => clearTimeout(t);
+    }
+    return undefined;
+  }, [screen]);
+
+  useEffect(() => () => audioContextRef.current?.close().catch(() => {}), []);
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    const canvas = canvasRef.current;
+    if (!stage || !canvas) return undefined;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return undefined;
+    const dpr = window.devicePixelRatio || 1;
+    const resize = () => {
+      const rect = stage.getBoundingClientRect();
+      canvas.width = Math.floor(Math.max(320, rect.width) * dpr);
+      canvas.height = Math.floor(Math.max(430, rect.height) * dpr);
+      canvas.style.width = `${Math.max(320, rect.width)}px`;
+      canvas.style.height = `${Math.max(430, rect.height)}px`;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    };
+    resize();
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
+  }, []);
+
+  useEffect(() => {
+    if (screen !== "playing") return undefined;
+    const canvas = canvasRef.current;
+    if (!canvas) return undefined;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return undefined;
+    resetGame();
+
+    const intersects = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+    const spawn = (game) => {
+      const diff = Math.min(1, game.elapsed / 80);
+      const pool = [{ kind: "low-wall", required: "jump" }, { kind: "high-wall", required: "vault" }, { kind: "barrier", required: "slide" }, { kind: "gap", required: "jump" }, { kind: "moving-hazard", required: "dash" }];
+      const pick = pool[Math.floor(Math.random() * pool.length)];
+      const p = game.player;
+      const gy = game.height - 84;
+      const x = game.width + 40;
+      if (pick.kind === "low-wall") game.obstacles.push({ ...pick, x, y: gy - (p.h * 0.58), w: p.w * 1.35, h: p.h * 0.58, points: FLOW_RUNNER.scoreObstacleBonus, cleared: false });
+      if (pick.kind === "high-wall") game.obstacles.push({ ...pick, x, y: gy - (p.h * 0.96), w: p.w * 1.56, h: p.h * 0.96, points: FLOW_RUNNER.scoreObstacleBonus + 12, cleared: false });
+      if (pick.kind === "barrier") game.obstacles.push({ ...pick, x, y: gy - p.h * 0.76, w: p.w * 1.9, h: 18, points: FLOW_RUNNER.scoreObstacleBonus + 8, cleared: false });
+      if (pick.kind === "gap") game.obstacles.push({ ...pick, x, y: gy, w: Math.max(72, game.width * (0.12 + diff * 0.07)), h: 56, points: FLOW_RUNNER.scoreObstacleBonus + 15, cleared: false });
+      if (pick.kind === "moving-hazard") game.obstacles.push({ ...pick, x, y: gy - p.h * 0.68, w: 28, h: 28, wave: Math.random() * Math.PI * 2, points: FLOW_RUNNER.scoreObstacleBonus + 18, cleared: false });
+    };
+
+    let prev = 0;
+    const loop = (ts) => {
+      const game = gameRef.current;
+      if (!prev) prev = ts;
+      const raw = Math.min(FLOW_RUNNER.maxFrameDelta, (ts - prev) / 1000);
+      prev = ts;
+      const slow = game.dead ? Math.max(0.08, 1 - game.deathElapsed / FLOW_RUNNER.deathSlowMoDuration) : 1;
+      const dt = raw * slow;
+      const p = game.player;
+      const gy = game.height - 84;
+      const speed = (FLOW_RUNNER.baseSpeed + game.elapsed * FLOW_RUNNER.speedRamp) * (1 + (game.flow / 100) * FLOW_RUNNER.flowSpeedFactor) * (p.dashTimer > 0 ? FLOW_RUNNER.dashBoost : 1);
+
+      if (!game.dead) {
+        game.elapsed += dt;
+        game.spawnTimer -= dt;
+        if (game.spawnTimer <= 0) {
+          spawn(game);
+          game.spawnTimer = Math.max(FLOW_RUNNER.minSpawnInterval, FLOW_RUNNER.baseSpawnInterval - game.elapsed * FLOW_RUNNER.spawnAcceleration) + Math.random() * 0.2;
+        }
+        if (!p.onGround) {
+          p.vy += FLOW_RUNNER.gravity * dt;
+          if (p.holdJump && p.holdElapsed < FLOW_RUNNER.jumpHoldMax) {
+            p.vy -= FLOW_RUNNER.jumpHoldForce * dt;
+            p.holdElapsed += dt;
+          }
+          p.y += p.vy * dt;
+        }
+        if (p.y >= gy - p.h) { p.y = gy - p.h; p.vy = 0; p.onGround = true; p.holdJump = false; }
+        p.slideTimer = Math.max(0, p.slideTimer - dt);
+        p.vaultTimer = Math.max(0, p.vaultTimer - dt);
+        p.dashTimer = Math.max(0, p.dashTimer - dt);
+      } else {
+        game.deathElapsed += raw;
+      }
+
+      const ph = p.h * (p.slideTimer > 0 ? 0.56 : 1);
+      const pw = p.w * (p.dashTimer > 0 ? 1.16 : 1);
+      const pb = { x: p.x, y: p.y + (p.h - ph), w: pw, h: ph };
+      for (const o of game.obstacles) {
+        o.x -= speed * dt;
+        if (o.kind === "moving-hazard") { o.wave += dt * 4; o.y += Math.sin(o.wave) * 0.6; }
+        if (!o.cleared) {
+          if (o.kind === "gap") {
+            const overlap = pb.x + pb.w > o.x + 8 && pb.x < o.x + o.w - 8;
+            if (overlap && pb.y + pb.h >= gy - 3) triggerHit();
+          } else if (o.kind === "barrier") {
+            if (intersects(pb, o) && p.slideTimer <= 0 && p.dashTimer <= 0) triggerHit();
+          } else if (o.kind === "high-wall") {
+            if (intersects(pb, o) && p.vaultTimer <= 0 && p.dashTimer <= 0) triggerHit();
+          } else if (intersects(pb, o) && p.dashTimer <= 0) triggerHit();
+          if (o.x + o.w < p.x - 8) { o.cleared = true; game.score += o.points; game.flow = Math.min(100, game.flow + 2); }
+        }
+      }
+      game.obstacles = game.obstacles.filter((o) => o.x + o.w > -80);
+      game.flow = Math.max(0, game.flow - FLOW_RUNNER.flowDecayPerSecond * dt);
+      game.score += speed * dt * FLOW_RUNNER.scoreDistanceFactor + game.flow * dt * FLOW_RUNNER.scoreFlowFactor;
+      game.phase += dt * (0.9 + speed * 0.002);
+
+      ctx.clearRect(0, 0, game.width, game.height);
+      ctx.fillStyle = "rgba(8,11,14,0.96)";
+      ctx.fillRect(0, 0, game.width, game.height);
+      ctx.strokeStyle = "rgba(88,238,220,0.07)";
+      for (let i = -1; i < 12; i += 1) {
+        const x = ((i * 92 - game.phase * 60) % (game.width + 92)) - 40;
+        ctx.beginPath(); ctx.moveTo(x, gy - 140); ctx.lineTo(x + 35, gy - 220); ctx.stroke();
+      }
+      ctx.strokeStyle = "rgba(130,230,214,0.32)";
+      ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(game.width, gy); ctx.stroke();
+      for (const o of game.obstacles) {
+        if (o.kind === "gap") { ctx.fillStyle = "rgba(0,0,0,0.75)"; ctx.fillRect(o.x, gy + 1, o.w, o.h); continue; }
+        ctx.fillStyle = "rgba(232,240,246,0.12)";
+        ctx.strokeStyle = o.required === "dash" ? "rgba(76,184,255,0.45)" : "rgba(88,238,220,0.28)";
+        ctx.lineWidth = o.required === "dash" ? 1.8 : 1.3;
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(o.x, o.y, o.w, o.h, 8);
+        else ctx.rect(o.x, o.y, o.w, o.h);
+        ctx.fill();
+        ctx.stroke();
+      }
+      if (game.flow > 65 || p.dashTimer > 0) { ctx.fillStyle = "rgba(68,210,255,0.24)"; ctx.fillRect(pb.x - 18, pb.y + pb.h * 0.4, 20, 8); }
+      ctx.fillStyle = "rgba(240,248,255,0.9)";
+      ctx.strokeStyle = `rgba(95,220,255,${0.35 + Math.max(0.2, game.flow / 100) * 0.35})`;
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(pb.x, pb.y, pb.w, pb.h, 8);
+      else ctx.rect(pb.x, pb.y, pb.w, pb.h);
+      ctx.fill();
+      ctx.stroke();
+
+      if (game.dead && game.deathElapsed >= FLOW_RUNNER.deathSlowMoDuration) {
+        const end = Math.floor(game.score);
+        setFinalScore(end);
+        setScore(end);
+        setFlow(Math.round(game.flow));
+        setScreen("gameover");
+      } else {
+        setScore(Math.floor(game.score));
+        setFlow(Math.round(game.flow));
+      }
+      rafRef.current = requestAnimationFrame(loop);
+    };
+
+    rafRef.current = requestAnimationFrame(loop);
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+  }, [resetGame, screen, triggerHit]);
+
+  const handlePointerDown = (event) => {
+    if (screen === "idle") { startRun(); return; }
+    if (screen !== "playing") return;
+    pointerRef.current = { down: true, moved: false, startX: event.clientX, startY: event.clientY, startTime: performance.now(), consumed: false };
+  };
+
+  const handlePointerMove = (event) => {
+    if (screen !== "playing" || !pointerRef.current.down) return;
+    const p = pointerRef.current;
+    const dx = event.clientX - p.startX;
+    const dy = event.clientY - p.startY;
+    if (Math.abs(dx) > 8 || Math.abs(dy) > 8) p.moved = true;
+    if (!p.consumed && Math.abs(dy) > 32 && Math.abs(dy) > Math.abs(dx) + 8) {
+      p.consumed = true;
+      if (dy > 0) doAction("slide"); else doAction("vault");
+      return;
+    }
+    if (!p.consumed && performance.now() - p.startTime > 120) {
+      p.consumed = true;
+      doAction("jump");
+    }
+  };
+
+  const handlePointerUp = () => {
+    if (screen !== "playing") return;
+    const p = pointerRef.current;
+    if (!p.down) return;
+    const now = performance.now();
+    if (!p.consumed && !p.moved && now - p.startTime < 240) {
+      if (now - lastTapRef.current < 260) { doAction("dash"); lastTapRef.current = 0; }
+      else { lastTapRef.current = now; doAction("jump"); }
+    }
+    gameRef.current.player.holdJump = false;
+    pointerRef.current.down = false;
+  };
+
+  return (
+    <div
+      ref={stageRef}
+      className="relative overflow-hidden rounded-3xl border border-white/10 bg-black/45 backdrop-blur-xl min-h-[68vh] shadow-[0_14px_40px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.04)]"
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+      onPointerLeave={handlePointerUp}
+      data-testid="run-mode-tab"
+    >
+      {(screen === "playing" || screen === "gameover") && <canvas ref={canvasRef} className="absolute inset-0 w-full h-full touch-none" />}
+
+      {(screen === "playing" || screen === "gameover") && (
+        <>
+          <div className="absolute top-4 right-4 z-30">
+            <button type="button" onClick={(e) => { e.stopPropagation(); setAudioEnabled((v) => !v); }} className="glass-button h-9 w-9 rounded-xl border border-white/10 flex items-center justify-center text-white/80 active:scale-95 transition-transform" aria-label={audioEnabled ? "Disable audio" : "Enable audio"}>
+              {audioEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+            </button>
+          </div>
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-2 w-[72%] max-w-[280px]">
+            <div className="glass-card px-5 py-1.5 rounded-full border border-white/10">
+              <span className="text-[11px] text-white/60 uppercase tracking-[0.2em] mr-2">Score</span>
+              <span className="text-lg font-mono text-white/95">{score}</span>
+            </div>
+            <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden border border-white/10">
+              <div className="h-full transition-all duration-150" style={{ width: `${Math.max(0, Math.min(100, flow))}%`, background: "linear-gradient(90deg, rgba(63,194,255,0.8), rgba(86,252,209,0.85))", boxShadow: flow > 70 ? "0 0 10px rgba(86,252,209,0.45)" : "none" }} />
+            </div>
+          </div>
+          {perfectMoveFlash && <div className="absolute top-20 left-1/2 -translate-x-1/2 text-[11px] uppercase tracking-[0.2em] text-[#83ffe1]/85 z-20 animate-pulse">Perfect Move</div>}
+        </>
+      )}
+
+      {screen === "idle" && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center">
+          <div className="glass-card w-full max-w-[360px] p-7 border border-white/10">
+            <p className="text-[11px] uppercase tracking-[0.32em] text-white/45 mb-3">FLOW RUNNER</p>
+            <h2 className="text-2xl font-heading font-semibold text-white/92 mb-3">Tap to Run</h2>
+            <p className="text-sm text-white/55 mb-6">Tap, hold, swipe, and dash to stay in flow.</p>
+            <button onClick={startRun} className="glass-button w-full py-3 rounded-2xl text-base font-semibold text-white hover:text-white/95 border border-white/12 active:scale-[0.98] transition-transform" data-testid="run-start-btn">Start Run</button>
+            <div className="mt-5 h-[2px] rounded-full bg-white/10 overflow-hidden">
+              <div className="h-full w-1/3 bg-gradient-to-r from-transparent via-[#5af0ff]/70 to-transparent animate-[pulse_1.7s_ease-in-out_infinite]" />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {screen === "gameover" && (
+        <div className={`absolute inset-0 flex items-center justify-center px-6 backdrop-blur-sm bg-black/45 transition-opacity duration-300 ${gameOverVisible ? "opacity-100" : "opacity-0"}`}>
+          <div className="glass-card w-full max-w-[340px] p-7 text-center border border-white/12">
+            <p className="text-xs uppercase tracking-[0.25em] text-white/45 mb-2">RUN COMPLETE</p>
+            <p className="text-sm text-white/65">Final score</p>
+            <p className="text-4xl font-mono text-white/95 mb-6 mt-1">{finalScore}</p>
+            <button onClick={startRun} className="glass-button w-full py-3 rounded-2xl text-base font-semibold text-white border border-white/12 active:scale-[0.98] transition-transform" data-testid="run-again-btn">Run Again</button>
           </div>
         </div>
       )}
