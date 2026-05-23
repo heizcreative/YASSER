@@ -8,6 +8,27 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 const TIMEZONE = "America/New_York";
 const MINUTE_IN_MS = 60 * 1000;
 const FONT_LOAD_FALLBACK_MS = 1200;
+// Run Mode tuning values: time is in seconds, movement in px/sec unless noted.
+const RUN_MODE_INITIAL_SPAWN_TIMER = 0.75;
+const RUN_MODE_MAX_FRAME_DELTA = 0.033;
+const RUN_MODE_BASE_SPEED = 210;
+const RUN_MODE_SPEED_INCREASE_RATE = 20;
+const RUN_MODE_MIN_SPAWN_INTERVAL = 0.36;
+const RUN_MODE_INITIAL_SPAWN_INTERVAL = 0.92;
+const RUN_MODE_SPAWN_INTERVAL_DECAY = 0.014;
+const RUN_MODE_BASE_SCORE_RATE = 23;
+const RUN_MODE_SCORE_INCREASE_RATE = 0.9;
+const RUN_MODE_BALL_SMOOTHING = 11;
+const RUN_MODE_OBSTACLE_MIN_WIDTH_RATIO = 0.18;
+const RUN_MODE_OBSTACLE_WIDTH_VARIANCE = 0.18;
+const RUN_MODE_OBSTACLE_MIN_HEIGHT = 14;
+const RUN_MODE_OBSTACLE_HEIGHT_VARIANCE = 24;
+const RUN_MODE_DEATH_PARTICLE_COUNT = 22;
+const RUN_MODE_BALL_ROTATION_SPEED = 140;
+const RUN_MODE_MIN_SLOWDOWN = 0.22;
+const RUN_MODE_SLOWDOWN_RATE = 1.5;
+const RUN_MODE_PARTICLE_GRAVITY = 280;
+const RUN_MODE_DEATH_DURATION_SECONDS = 1.2;
 
 // Symbol configuration
 const SYMBOLS = {
@@ -909,6 +930,413 @@ const ChecklistTab = ({ currentTime, isWeekendMode }) => {
   );
 };
 
+const RunModeIcon = ({ active }) => (
+  <div
+    className={`w-7 h-7 rounded-[10px] border border-white/15 bg-[#121212] backdrop-blur-xl flex items-center justify-center transition-all ${
+      active ? "shadow-[0_0_16px_rgba(61,120,255,0.22)]" : ""
+    }`}
+  >
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+      <rect x="3.4" y="3" width="8.4" height="12" rx="1.4" fill="white" fillOpacity="0.92" />
+      <path d="M4.9 5.1h5.5M4.9 7.1h5.5M4.9 9.1h4.4" stroke="#101010" strokeOpacity="0.35" strokeWidth="0.6" />
+      <path d="M2.7 4.1v9.8" stroke="white" strokeOpacity="0.95" strokeWidth="0.9" strokeLinecap="round" />
+      <circle cx="2.7" cy="5.4" r="0.45" fill="#0F0F0F" />
+      <circle cx="2.7" cy="7.3" r="0.45" fill="#0F0F0F" />
+      <circle cx="2.7" cy="9.2" r="0.45" fill="#0F0F0F" />
+      <circle cx="2.7" cy="11.1" r="0.45" fill="#0F0F0F" />
+      <path d="M9.6 5.4l4.4-2.3c.33-.17.74-.04.92.29l.7 1.33c.17.33.04.74-.29.92L11 7.95l-1.4.1z" fill="#090909" />
+      <path d="M9.65 5.4L11 7.95" stroke="white" strokeOpacity="0.28" strokeWidth="0.5" />
+    </svg>
+  </div>
+);
+
+const RunModeTab = () => {
+  const [screen, setScreen] = useState("entry");
+  const [score, setScore] = useState(0);
+  const [finalScore, setFinalScore] = useState(0);
+  const stageRef = useRef(null);
+  const canvasRef = useRef(null);
+  const rafRef = useRef(null);
+  const pointerDraggingRef = useRef(false);
+  const gameRef = useRef({
+    width: 0,
+    height: 0,
+    ballX: 0,
+    ballY: 0,
+    targetX: 0,
+    ballRadius: 10,
+    elapsed: 0,
+    score: 0,
+    obstacles: [],
+    particles: [],
+    spawnTimer: RUN_MODE_INITIAL_SPAWN_TIMER,
+    dead: false,
+    deathElapsed: 0,
+    shake: 0
+  });
+
+  const handleStart = () => {
+    setScore(0);
+    setFinalScore(0);
+    setScreen("playing");
+  };
+
+  const clampBallTarget = useCallback((clientX) => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const rect = stage.getBoundingClientRect();
+    const game = gameRef.current;
+    const x = clientX - rect.left;
+    const min = game.ballRadius;
+    const max = Math.max(min, game.width - game.ballRadius);
+    game.targetX = Math.min(max, Math.max(min, x));
+  }, []);
+
+  const handlePointerDown = (event) => {
+    if (screen !== "playing") return;
+    pointerDraggingRef.current = true;
+    clampBallTarget(event.clientX);
+    if (event.currentTarget?.setPointerCapture) {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    }
+  };
+
+  const handlePointerMove = (event) => {
+    if (screen !== "playing") return;
+    if (pointerDraggingRef.current || event.pointerType === "mouse") {
+      clampBallTarget(event.clientX);
+    }
+  };
+
+  const handlePointerUp = () => {
+    pointerDraggingRef.current = false;
+  };
+
+  useEffect(() => {
+    if (screen !== "playing") return undefined;
+
+    const stage = stageRef.current;
+    const canvas = canvasRef.current;
+    if (!stage || !canvas) return undefined;
+
+    const context = canvas.getContext("2d");
+    if (!context) return undefined;
+
+    const game = gameRef.current;
+    let previousTimestamp = 0;
+    let lastRenderedScore = -1;
+
+    const resizeCanvas = () => {
+      const rect = stage.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const width = Math.max(320, rect.width);
+      const height = Math.max(420, rect.height);
+      canvas.width = Math.floor(width * dpr);
+      canvas.height = Math.floor(height * dpr);
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+      context.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      game.width = width;
+      game.height = height;
+      game.ballRadius = Math.max(10, Math.min(16, width * 0.03));
+      game.ballY = height - 70;
+      game.ballX = width / 2;
+      game.targetX = game.ballX;
+    };
+
+    const roundedRect = (x, y, w, h, r) => {
+      context.beginPath();
+      context.moveTo(x + r, y);
+      context.arcTo(x + w, y, x + w, y + h, r);
+      context.arcTo(x + w, y + h, x, y + h, r);
+      context.arcTo(x, y + h, x, y, r);
+      context.arcTo(x, y, x + w, y, r);
+      context.closePath();
+    };
+
+    const spawnObstacle = () => {
+      const w =
+        game.width *
+        (RUN_MODE_OBSTACLE_MIN_WIDTH_RATIO + Math.random() * RUN_MODE_OBSTACLE_WIDTH_VARIANCE);
+      const h = RUN_MODE_OBSTACLE_MIN_HEIGHT + Math.random() * RUN_MODE_OBSTACLE_HEIGHT_VARIANCE;
+      const x = Math.random() * (game.width - w);
+      game.obstacles.push({
+        x,
+        y: -h - 14,
+        w,
+        h,
+        radius: Math.min(12, h / 2)
+      });
+    };
+
+    const hasCollision = (obstacle) => {
+      const closestX = Math.max(obstacle.x, Math.min(game.ballX, obstacle.x + obstacle.w));
+      const closestY = Math.max(obstacle.y, Math.min(game.ballY, obstacle.y + obstacle.h));
+      const dx = game.ballX - closestX;
+      const dy = game.ballY - closestY;
+      return dx * dx + dy * dy < game.ballRadius * game.ballRadius;
+    };
+
+    const triggerDeath = () => {
+      game.dead = true;
+      game.deathElapsed = 0;
+      game.shake = 10;
+      game.particles = Array.from({ length: RUN_MODE_DEATH_PARTICLE_COUNT }, () => {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 130 + Math.random() * 210;
+        return {
+          x: game.ballX,
+          y: game.ballY,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          life: 0.35 + Math.random() * 0.55,
+          age: 0,
+          size: 1.2 + Math.random() * 3
+        };
+      });
+    };
+
+    const resetGame = () => {
+      game.elapsed = 0;
+      game.score = 0;
+      game.obstacles = [];
+      game.particles = [];
+      game.spawnTimer = RUN_MODE_INITIAL_SPAWN_TIMER;
+      game.dead = false;
+      game.deathElapsed = 0;
+      game.shake = 0;
+      previousTimestamp = 0;
+      lastRenderedScore = -1;
+      setScore(0);
+      resizeCanvas();
+    };
+
+    const draw = (timestamp) => {
+      context.clearRect(0, 0, game.width, game.height);
+
+      context.fillStyle = "rgba(8,8,10,0.55)";
+      context.fillRect(0, 0, game.width, game.height);
+
+      context.save();
+      if (game.shake > 0) {
+        const offsetX = (Math.random() - 0.5) * game.shake;
+        const offsetY = (Math.random() - 0.5) * game.shake;
+        context.translate(offsetX, offsetY);
+      }
+
+      context.strokeStyle = "rgba(255,255,255,0.035)";
+      context.lineWidth = 1;
+      for (let y = 30; y < game.height; y += 46) {
+        context.beginPath();
+        context.moveTo(12, y);
+        context.lineTo(game.width - 12, y);
+        context.stroke();
+      }
+
+      for (const obstacle of game.obstacles) {
+        roundedRect(obstacle.x, obstacle.y, obstacle.w, obstacle.h, obstacle.radius);
+        context.fillStyle = "rgba(20,20,26,0.7)";
+        context.fill();
+        context.strokeStyle = "rgba(255,255,255,0.14)";
+        context.lineWidth = 1;
+        context.stroke();
+      }
+
+      for (const particle of game.particles) {
+        const alpha = Math.max(0, 1 - particle.age / particle.life);
+        context.beginPath();
+        context.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+        context.fillStyle = `rgba(160,210,255,${0.4 * alpha})`;
+        context.fill();
+      }
+
+      if (!game.dead) {
+        context.beginPath();
+        context.arc(game.ballX, game.ballY, game.ballRadius * 1.9, 0, Math.PI * 2);
+        const glow = context.createRadialGradient(
+          game.ballX,
+          game.ballY,
+          game.ballRadius * 0.45,
+          game.ballX,
+          game.ballY,
+          game.ballRadius * 2
+        );
+        glow.addColorStop(0, "rgba(166,222,255,0.46)");
+        glow.addColorStop(1, "rgba(166,222,255,0)");
+        context.fillStyle = glow;
+        context.fill();
+      }
+
+      context.beginPath();
+      context.arc(game.ballX, game.ballY, game.ballRadius, 0, Math.PI * 2);
+      context.fillStyle = game.dead ? "rgba(180,205,225,0.35)" : "rgba(210,240,255,0.85)";
+      context.fill();
+      context.lineWidth = 1;
+      context.strokeStyle = "rgba(255,255,255,0.7)";
+      context.stroke();
+
+      const rollAngle = (timestamp / RUN_MODE_BALL_ROTATION_SPEED) % (Math.PI * 2);
+      context.beginPath();
+      context.arc(
+        game.ballX + Math.cos(rollAngle) * game.ballRadius * 0.38,
+        game.ballY + Math.sin(rollAngle) * game.ballRadius * 0.38,
+        game.ballRadius * 0.18,
+        0,
+        Math.PI * 2
+      );
+      context.fillStyle = "rgba(120,150,170,0.7)";
+      context.fill();
+      context.restore();
+
+      if (game.dead) {
+        const flash = Math.max(0, 0.18 - game.deathElapsed * 0.24);
+        if (flash > 0) {
+          context.fillStyle = `rgba(255,255,255,${flash})`;
+          context.fillRect(0, 0, game.width, game.height);
+        }
+      }
+    };
+
+    const frame = (timestamp) => {
+      if (!previousTimestamp) previousTimestamp = timestamp;
+      const rawDelta = Math.min(RUN_MODE_MAX_FRAME_DELTA, (timestamp - previousTimestamp) / 1000);
+      previousTimestamp = timestamp;
+
+      const slowdown = game.dead
+        ? Math.max(RUN_MODE_MIN_SLOWDOWN, 1 - game.deathElapsed * RUN_MODE_SLOWDOWN_RATE)
+        : 1;
+      const dt = rawDelta * slowdown;
+      game.elapsed += game.dead ? 0 : dt;
+      const speed = RUN_MODE_BASE_SPEED + game.elapsed * RUN_MODE_SPEED_INCREASE_RATE;
+      const spawnInterval = Math.max(
+        RUN_MODE_MIN_SPAWN_INTERVAL,
+        RUN_MODE_INITIAL_SPAWN_INTERVAL - game.elapsed * RUN_MODE_SPAWN_INTERVAL_DECAY
+      );
+
+      game.ballX += (game.targetX - game.ballX) * Math.min(1, dt * RUN_MODE_BALL_SMOOTHING);
+
+      if (!game.dead) {
+        game.spawnTimer -= dt;
+        if (game.spawnTimer <= 0) {
+          spawnObstacle();
+          game.spawnTimer = spawnInterval;
+        }
+      } else {
+        game.deathElapsed += rawDelta;
+        game.shake = Math.max(0, game.shake - rawDelta * 16);
+      }
+
+      for (const obstacle of game.obstacles) {
+        obstacle.y += speed * dt;
+      }
+      game.obstacles = game.obstacles.filter((obstacle) => obstacle.y < game.height + obstacle.h + 20);
+
+      for (const particle of game.particles) {
+        particle.x += particle.vx * dt;
+        particle.y += particle.vy * dt;
+        particle.vy += RUN_MODE_PARTICLE_GRAVITY * dt;
+        particle.age += dt;
+      }
+      game.particles = game.particles.filter((particle) => particle.age <= particle.life);
+
+      if (!game.dead && game.obstacles.some(hasCollision)) {
+        triggerDeath();
+      }
+
+      if (!game.dead) {
+        game.score += dt * (RUN_MODE_BASE_SCORE_RATE + game.elapsed * RUN_MODE_SCORE_INCREASE_RATE);
+        const roundedScore = Math.floor(game.score);
+        if (roundedScore !== lastRenderedScore) {
+          lastRenderedScore = roundedScore;
+          setScore(roundedScore);
+        }
+      }
+
+      draw(timestamp);
+
+      if (game.dead && game.deathElapsed >= RUN_MODE_DEATH_DURATION_SECONDS) {
+        const endScore = Math.floor(game.score);
+        setFinalScore(endScore);
+        setScore(endScore);
+        setScreen("gameover");
+        return;
+      }
+
+      rafRef.current = requestAnimationFrame(frame);
+    };
+
+    resetGame();
+    rafRef.current = requestAnimationFrame(frame);
+    window.addEventListener("resize", resizeCanvas);
+
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      window.removeEventListener("resize", resizeCanvas);
+      pointerDraggingRef.current = false;
+    };
+  }, [screen]);
+
+  return (
+    <div
+      ref={stageRef}
+      className="relative overflow-hidden rounded-3xl border border-white/10 bg-black/45 backdrop-blur-xl min-h-[68vh] shadow-[0_14px_40px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.04)]"
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+      onPointerLeave={handlePointerUp}
+      data-testid="run-mode-tab"
+    >
+      {screen === "playing" && (
+        <>
+          <canvas ref={canvasRef} className="absolute inset-0 w-full h-full touch-none" />
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20">
+            <div className="glass-card px-5 py-2 rounded-full border border-white/10">
+              <span className="text-xs text-white/60 uppercase tracking-wider mr-2">Score</span>
+              <span className="text-lg font-mono text-white/95">{score}</span>
+            </div>
+          </div>
+        </>
+      )}
+
+      {screen === "entry" && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center">
+          <div className="glass-card w-full max-w-[360px] p-8 border border-white/10">
+            <p className="text-xs uppercase tracking-[0.28em] text-white/45 mb-3">Run Mode</p>
+            <h2 className="text-2xl font-heading font-semibold text-white/92 mb-2">Focus Flow</h2>
+            <p className="text-sm text-white/55 mb-7">Slide the glowing ball through the market noise.</p>
+            <button
+              onClick={handleStart}
+              className="glass-button w-full py-3 rounded-2xl text-base font-semibold text-white hover:text-white/95 border border-white/12"
+              data-testid="run-start-btn"
+            >
+              Start Run
+            </button>
+          </div>
+        </div>
+      )}
+
+      {screen === "gameover" && (
+        <div className="absolute inset-0 flex items-center justify-center px-6">
+          <div className="glass-card w-full max-w-[340px] p-7 text-center border border-white/12">
+            <p className="text-xs uppercase tracking-[0.25em] text-white/45 mb-2">Run Complete</p>
+            <p className="text-sm text-white/65">Final score</p>
+            <p className="text-4xl font-mono text-white/95 mb-6 mt-1">{finalScore}</p>
+            <button
+              onClick={handleStart}
+              className="glass-button w-full py-3 rounded-2xl text-base font-semibold text-white border border-white/12"
+              data-testid="run-again-btn"
+            >
+              Run Again
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // Bottom Navigation
 const BottomNav = ({ activeTab, onTabChange }) => (
   <div className="fixed bottom-0 left-0 right-0 flex justify-center z-[9999]" data-testid="bottom-nav">
@@ -936,6 +1364,18 @@ const BottomNav = ({ activeTab, onTabChange }) => (
       >
         <ClipboardCheck className="w-4 h-4" />
         <span className="text-[10px] font-medium">Checklist</span>
+      </button>
+      <button
+        onClick={() => onTabChange("run")}
+        className={`flex flex-col items-center gap-0.5 px-4 py-1.5 rounded-lg transition-colors ${
+          activeTab === "run"
+            ? "bg-white/5 text-crtv-blue"
+            : "text-white/40 hover:text-white/60"
+        }`}
+        data-testid="nav-run-btn"
+      >
+        <RunModeIcon active={activeTab === "run"} />
+        <span className="text-[10px] font-medium">Run</span>
       </button>
     </div>
   </div>
@@ -1021,8 +1461,10 @@ function App() {
             <MarketSessions currentTime={currentTime} isWeekendMode={isWeekendMode} />
             <CalculatorTab symbol={symbol} onSymbolChange={handleSymbolChange} />
           </>
-        ) : (
+        ) : activeTab === "checklist" ? (
           <ChecklistTab currentTime={currentTime} isWeekendMode={isWeekendMode} />
+        ) : (
+          <RunModeTab />
         )}
       </div>
       <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
