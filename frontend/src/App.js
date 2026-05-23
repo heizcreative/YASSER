@@ -961,7 +961,7 @@ const RunModeTab = () => {
   const gameRef = useRef({
     width: 0,
     height: 0,
-    stageLeft: null,
+    stageLeft: 0,
     ballX: 0,
     ballY: 0,
     targetX: 0,
@@ -984,7 +984,6 @@ const RunModeTab = () => {
 
   const clampBallTarget = useCallback((clientX) => {
     const game = gameRef.current;
-    if (game.stageLeft === null) return;
     const x = clientX - game.stageLeft;
     const min = game.ballRadius;
     const max = Math.max(min, game.width - game.ballRadius);
@@ -994,10 +993,6 @@ const RunModeTab = () => {
   const handlePointerDown = (event) => {
     if (screen !== "playing") return;
     pointerDraggingRef.current = true;
-    const stage = stageRef.current;
-    if (stage) {
-      gameRef.current.stageLeft = stage.getBoundingClientRect().left;
-    }
     clampBallTarget(event.clientX);
     if (event.currentTarget?.setPointerCapture) {
       event.currentTarget.setPointerCapture(event.pointerId);
