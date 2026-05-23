@@ -24,6 +24,11 @@ const RUN_MODE_OBSTACLE_WIDTH_VARIANCE = 0.18;
 const RUN_MODE_OBSTACLE_MIN_HEIGHT = 14;
 const RUN_MODE_OBSTACLE_HEIGHT_VARIANCE = 24;
 const RUN_MODE_DEATH_PARTICLE_COUNT = 22;
+const RUN_MODE_BALL_ROTATION_SPEED = 140;
+const RUN_MODE_MIN_SLOWDOWN = 0.22;
+const RUN_MODE_SLOWDOWN_RATE = 1.5;
+const RUN_MODE_PARTICLE_GRAVITY = 280;
+const RUN_MODE_DEATH_DURATION_SECONDS = 1.2;
 
 // Symbol configuration
 const SYMBOLS = {
@@ -1171,7 +1176,7 @@ const RunModeTab = () => {
       context.strokeStyle = "rgba(255,255,255,0.7)";
       context.stroke();
 
-      const rollAngle = (timestamp / 140) % (Math.PI * 2);
+      const rollAngle = (timestamp / RUN_MODE_BALL_ROTATION_SPEED) % (Math.PI * 2);
       context.beginPath();
       context.arc(
         game.ballX + Math.cos(rollAngle) * game.ballRadius * 0.38,
@@ -1198,7 +1203,9 @@ const RunModeTab = () => {
       const rawDelta = Math.min(RUN_MODE_MAX_FRAME_DELTA, (timestamp - previousTimestamp) / 1000);
       previousTimestamp = timestamp;
 
-      const slowdown = game.dead ? Math.max(0.22, 1 - game.deathElapsed * 1.5) : 1;
+      const slowdown = game.dead
+        ? Math.max(RUN_MODE_MIN_SLOWDOWN, 1 - game.deathElapsed * RUN_MODE_SLOWDOWN_RATE)
+        : 1;
       const dt = rawDelta * slowdown;
       game.elapsed += game.dead ? 0 : dt;
       const speed = RUN_MODE_BASE_SPEED + game.elapsed * RUN_MODE_SPEED_INCREASE_RATE;
@@ -1228,7 +1235,7 @@ const RunModeTab = () => {
       for (const particle of game.particles) {
         particle.x += particle.vx * dt;
         particle.y += particle.vy * dt;
-        particle.vy += 280 * dt;
+        particle.vy += RUN_MODE_PARTICLE_GRAVITY * dt;
         particle.age += dt;
       }
       game.particles = game.particles.filter((particle) => particle.age <= particle.life);
@@ -1248,7 +1255,7 @@ const RunModeTab = () => {
 
       draw(timestamp);
 
-      if (game.dead && game.deathElapsed >= 1.2) {
+      if (game.dead && game.deathElapsed >= RUN_MODE_DEATH_DURATION_SECONDS) {
         const endScore = Math.floor(game.score);
         setFinalScore(endScore);
         setScore(endScore);
