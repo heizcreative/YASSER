@@ -8,6 +8,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 const TIMEZONE = "America/New_York";
 const MINUTE_IN_MS = 60 * 1000;
 const FONT_LOAD_FALLBACK_MS = 1200;
+const RUN_MODE_INITIAL_SPAWN_TIMER = 0.75;
+const RUN_MODE_MAX_FRAME_DELTA = 0.033;
+const RUN_MODE_BASE_SPEED = 210;
+const RUN_MODE_SPEED_INCREASE_RATE = 20;
+const RUN_MODE_MIN_SPAWN_INTERVAL = 0.36;
+const RUN_MODE_INITIAL_SPAWN_INTERVAL = 0.92;
+const RUN_MODE_SPAWN_INTERVAL_DECAY = 0.014;
+const RUN_MODE_BASE_SCORE_RATE = 23;
+const RUN_MODE_SCORE_INCREASE_RATE = 0.9;
 
 // Symbol configuration
 const SYMBOLS = {
@@ -949,7 +958,7 @@ const RunModeTab = () => {
     score: 0,
     obstacles: [],
     particles: [],
-    spawnTimer: 0.8,
+    spawnTimer: RUN_MODE_INITIAL_SPAWN_TIMER,
     dead: false,
     deathElapsed: 0,
     shake: 0
@@ -1080,7 +1089,7 @@ const RunModeTab = () => {
       game.score = 0;
       game.obstacles = [];
       game.particles = [];
-      game.spawnTimer = 0.75;
+      game.spawnTimer = RUN_MODE_INITIAL_SPAWN_TIMER;
       game.dead = false;
       game.deathElapsed = 0;
       game.shake = 0;
@@ -1178,14 +1187,17 @@ const RunModeTab = () => {
 
     const frame = (timestamp) => {
       if (!previousTimestamp) previousTimestamp = timestamp;
-      const rawDelta = Math.min(0.033, (timestamp - previousTimestamp) / 1000);
+      const rawDelta = Math.min(RUN_MODE_MAX_FRAME_DELTA, (timestamp - previousTimestamp) / 1000);
       previousTimestamp = timestamp;
 
       const slowdown = game.dead ? Math.max(0.22, 1 - game.deathElapsed * 1.5) : 1;
       const dt = rawDelta * slowdown;
       game.elapsed += game.dead ? 0 : dt;
-      const speed = 210 + game.elapsed * 20;
-      const spawnInterval = Math.max(0.36, 0.92 - game.elapsed * 0.014);
+      const speed = RUN_MODE_BASE_SPEED + game.elapsed * RUN_MODE_SPEED_INCREASE_RATE;
+      const spawnInterval = Math.max(
+        RUN_MODE_MIN_SPAWN_INTERVAL,
+        RUN_MODE_INITIAL_SPAWN_INTERVAL - game.elapsed * RUN_MODE_SPAWN_INTERVAL_DECAY
+      );
 
       game.ballX += (game.targetX - game.ballX) * Math.min(1, dt * 11);
 
@@ -1218,7 +1230,7 @@ const RunModeTab = () => {
       }
 
       if (!game.dead) {
-        game.score += dt * (23 + game.elapsed * 0.9);
+        game.score += dt * (RUN_MODE_BASE_SCORE_RATE + game.elapsed * RUN_MODE_SCORE_INCREASE_RATE);
         const roundedScore = Math.floor(game.score);
         if (roundedScore !== lastRenderedScore) {
           lastRenderedScore = roundedScore;
